@@ -1,0 +1,17 @@
+name: Task
+description: Engineering task
+labels: ["task"]
+
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Task Description
+  - type: textarea
+    id: details
+    attributes:
+      label: Implementation Notes
+  - type: textarea
+    id: done
+    attributes:
+      label: Definition of Done

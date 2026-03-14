@@ -1,0 +1,22 @@
+name: Epic
+description: Large initiative spanning multiple stories
+labels: ["epic"]
+
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why this epic exists
+  - type: textarea
+    id: goals
+    attributes:
+      label: Goals
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
