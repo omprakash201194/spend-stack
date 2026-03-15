@@ -1,0 +1,16 @@
+﻿{
+  "name": "@spendstack/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron desktop shell for SpendStack.",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "echo \"TODO: wire Electron + React dev command\"",
+    "build": "echo \"TODO: wire Electron + React build command\"",
+    "lint": "echo \"TODO: add desktop lint\"",
+    "typecheck": "echo \"TODO: add desktop typecheck\"",
+    "test": "echo \"TODO: add desktop tests\"",
+    "test:e2e": "echo \"TODO: add Playwright E2E\"",
+    "clean": "echo \"TODO: add desktop clean\""
+  }
+}

@@ -1,0 +1,15 @@
+﻿{
+  "name": "@spendstack/parser-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Statement parsing engine and bank adapters for SpendStack.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "echo \"TODO: build parser-engine package\"",
+    "lint": "echo \"TODO: lint parser-engine package\"",
+    "typecheck": "echo \"TODO: typecheck parser-engine package\"",
+    "test": "echo \"TODO: test parser-engine package\"",
+    "clean": "echo \"TODO: clean parser-engine package\""
+  }
+}
