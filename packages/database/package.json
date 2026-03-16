@@ -3,13 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "description": "Database layer and data access utilities for SpendStack.",
+  "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
-    "build": "echo \"TODO: build database package\"",
-    "lint": "echo \"TODO: lint database package\"",
-    "typecheck": "echo \"TODO: typecheck database package\"",
-    "test": "echo \"TODO: test database package\"",
-    "clean": "echo \"TODO: clean database package\""
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo \"No tests yet for @spendstack/database\"",
+    "clean": "rm -rf dist"
   }
 }
