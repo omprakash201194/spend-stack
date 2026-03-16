@@ -34,13 +34,13 @@ jobs:
         run: npm ci
 
       - name: Lint
-        run: npm run lint --workspaces --if-present
+        run: npm run lint
 
       - name: Typecheck
         run: npm run typecheck --workspaces --if-present
 
       - name: Unit and integration tests
-        run: npm run test --workspaces --if-present -- --runInBand
+        run: npm run test --workspaces --if-present
 
   build-desktop:
     name: Build desktop app

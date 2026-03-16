@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false
+  },
+  "include": [
+    "apps/desktop/electron/**/*.ts",
+    "apps/desktop/src/**/*.ts",
+    "apps/desktop/src/**/*.tsx",
+    "apps/desktop/vite.config.ts",
+    "packages/*/src/**/*.ts",
+    "packages/*/src/**/*.tsx",
+    "packages/*/vitest.config.ts",
+    "eslint.config.js"
+  ],
+  "exclude": ["**/node_modules/**", "**/dist/**", "**/dist-electron/**"]
+}
