@@ -127,3 +127,37 @@ export type ImportJobStatus =
   | 'finalized'
   | 'failed'
   | 'cancelled';
+
+/**
+ * Links a normalized transaction back to its origin in the source statement
+ * file.  Stored alongside import results to satisfy the "imported transactions
+ * can be traced back to source file and normalized row" requirement.
+ *
+ * The `normalizedIndex` field identifies the position of the corresponding
+ * `NormalizedTransaction` in the `normalizedCandidates` array produced by the
+ * parser, enabling a precise many-to-one relationship even when multiple rows
+ * produce the same fingerprint.
+ */
+export interface TransactionSourceTrace {
+  /**
+   * Zero-based index of the corresponding entry in the
+   * `ImportPipelineResult.normalizedTransactions` candidates array.
+   */
+  normalizedIndex: number;
+  /** Matches `RawStatementRow.sourceReference` for the originating raw row. */
+  sourceReference: string;
+  /** ID of the source statement file. */
+  sourceFileId: string;
+  /** Human-readable file name (as uploaded by the user). */
+  sourceFileName: string;
+  /** ID of the import job that produced this transaction. */
+  importJobId: string;
+  /** Stable parser identifier (e.g. `"icici-csv-v1"`). */
+  parserId: string;
+  /** Semver version of the parser. */
+  parserVersion: string;
+  /** The verbatim row from the source file — preserved for full traceability. */
+  rawRow: RawStatementRow;
+  /** ISO 8601 UTC timestamp of when this transaction was imported. */
+  importedAt: string;
+}

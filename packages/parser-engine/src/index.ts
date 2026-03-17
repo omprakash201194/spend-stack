@@ -10,6 +10,7 @@ export type {
   ParserDefinition,
   ReviewQueueReason,
   ImportJobStatus,
+  TransactionSourceTrace,
 } from './core/types.js';
 
 // Normalization utilities
