@@ -25,6 +25,10 @@ describe('iciciBankCsvParser.detect', () => {
     expect(iciciBankCsvParser.detect(ICICI_CSV)).toBe(true);
   });
 
+  it('detects a flexible (lower-case headers) ICICI CSV', () => {
+    expect(iciciBankCsvParser.detect(ICICI_FLEXIBLE_CSV)).toBe(true);
+  });
+
   it('does not detect an unrelated CSV format', () => {
     expect(iciciBankCsvParser.detect(FOREIGN_CSV)).toBe(false);
   });

@@ -158,7 +158,6 @@ export function verifyPin(profile: UserProfile, pin: string): AuthResult {
  * Returns a new `UserProfile` without PIN fields; the original is not mutated.
  */
 export function removePin(profile: UserProfile): UserProfile {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { pinHash: _pinHash, pinSalt: _pinSalt, ...rest } = profile;
   return { ...rest, updatedAt: new Date().toISOString() };
 }

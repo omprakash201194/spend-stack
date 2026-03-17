@@ -9,6 +9,12 @@ platform**, and contributions are welcome.
 
 ## Development Workflow
 
+Before starting, make sure your local environment is configured
+correctly. Follow the
+**[Dev Installation & Troubleshooting Guide](docs/DEV_INSTALLATION.md)**
+to install prerequisites, set up dependencies, run the app, and resolve
+common issues.
+
 1.  Fork the repository
 2.  Create a feature branch
 3.  Implement changes
