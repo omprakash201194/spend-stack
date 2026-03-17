@@ -38,3 +38,24 @@ export type {
   PrivacyRule,
   CreateWorkspaceInput,
 } from './workspace.js';
+
+export {
+  createAuditEvent,
+  appendAuditEvent,
+  formatAuditHistory,
+  AUDIT_SCHEMA_VERSION,
+} from './audit.js';
+export type {
+  AuditSchemaVersion,
+  AuditEventType,
+  AuditEvent,
+  AuditLog,
+} from './audit.js';
+
+export { buildDiagnosticsBundle } from './diagnostics.js';
+export type {
+  RuntimeInfo,
+  AuditSummary,
+  DiagnosticsBundle,
+  BuildDiagnosticsBundleOptions,
+} from './diagnostics.js';

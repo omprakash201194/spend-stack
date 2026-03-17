@@ -13,7 +13,7 @@
  *   9. Finalization        — emit the completed pipeline result
  */
 
-import type { FileType, NormalizedTransaction, RawStatementRow, ImportJobStatus } from './core/types.js';
+import type { FileType, NormalizedTransaction, RawStatementRow, ImportJobStatus, TransactionSourceTrace } from './core/types.js';
 import { resolveParser } from './parser-registry.js';
 import { detectDuplicates } from './core/duplicate-detector.js';
 import type { DuplicateDetectionResult } from './core/duplicate-detector.js';
@@ -67,6 +67,12 @@ export interface ImportPipelineResult {
   parserWarnings: string[];
   /** Whether any items require human review before finalization. */
   reviewRequired: boolean;
+  /**
+   * Source traceability records — one per normalized transaction candidate
+   * (including duplicates and review items).  Callers can use these to link
+   * any transaction back to the exact raw row and source file it came from.
+   */
+  sourceTraces: TransactionSourceTrace[];
   metrics: {
     totalRowsDetected: number;
     rowsParsed: number;
@@ -122,6 +128,7 @@ export function runImportPipeline(input: ImportPipelineInput): ImportPipelineRes
       reviewItems: [],
       parserWarnings: [`No parser found for fileType="${fileType}". The file format may not be supported.`],
       reviewRequired: false,
+      sourceTraces: [],
       metrics: {
         totalRowsDetected: 0,
         rowsParsed: 0,
@@ -213,6 +220,32 @@ export function runImportPipeline(input: ImportPipelineInput): ImportPipelineRes
   // ------------------------------------------------------------------
   const status: ImportJobStatus = reviewRequired ? 'review_required' : 'finalized';
 
+  // Build source traceability records — one per normalized candidate,
+  // preserving the raw row at the corresponding index so any transaction
+  // can be traced back to its exact line in the original file.
+  const importedAt = new Date().toISOString();
+  const sourceTraces: TransactionSourceTrace[] = normalizedCandidates.map((_, index) => {
+    const rawRow = rawRows[index] ?? {
+      sourceReference: `row-${index}`,
+      rawText: '',
+      extractedDateText: '',
+      extractedAmountText: '',
+      extractedDescriptionText: '',
+      extractionMetadata: {},
+    };
+    return {
+      normalizedIndex: index,
+      sourceReference: rawRow.sourceReference,
+      sourceFileId: fileId,
+      sourceFileName: fileName,
+      importJobId: fileId,
+      parserId: parser.parserId,
+      parserVersion: parser.parserVersion,
+      rawRow,
+      importedAt,
+    };
+  });
+
   return {
     statementFile,
     importJobId: fileId,
@@ -225,6 +258,7 @@ export function runImportPipeline(input: ImportPipelineInput): ImportPipelineRes
     reviewItems,
     parserWarnings: warnings,
     reviewRequired,
+    sourceTraces,
     metrics: {
       totalRowsDetected: rawRows.length,
       rowsParsed: normalizedCandidates.length,
