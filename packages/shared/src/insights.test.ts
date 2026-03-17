@@ -8,12 +8,7 @@ import {
   canRunAiInsights,
   INSIGHT_CONSENT_SCHEMA_VERSION,
 } from './insights.js';
-import type {
-  InsightTransaction,
-  BalanceSummaryOptions,
-  CashflowSummaryOptions,
-  InsightConsent,
-} from './insights.js';
+import type { InsightTransaction } from './insights.js';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
