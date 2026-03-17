@@ -1,0 +1,15 @@
+{
+  "name": "@spendstack/infrastructure",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Infrastructure adapters, persistence, and external integrations for SpendStack.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo \"No tests yet for @spendstack/infrastructure\"",
+    "clean": "rm -rf dist"
+  }
+}
