@@ -154,6 +154,14 @@ Development tooling:
 
 ------------------------------------------------------------------------
 
+## Getting Started
+
+See the **[Dev Installation & Troubleshooting Guide](docs/DEV_INSTALLATION.md)**
+for step-by-step instructions on setting up a local development environment,
+running the app, executing tests, and resolving common issues.
+
+------------------------------------------------------------------------
+
 ## Development Roadmap
 
 v1.0 -- Core statement import system\
