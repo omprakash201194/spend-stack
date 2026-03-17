@@ -1,20 +1,35 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import Sidebar from './components/Sidebar.js';
+import DashboardView from './views/DashboardView.js';
+import TransactionsView from './views/TransactionsView.js';
+import ImportView from './views/ImportView.js';
+import CategoriesView from './views/CategoriesView.js';
+import SettingsView from './views/SettingsView.js';
+
+export type NavItem = 'dashboard' | 'transactions' | 'import' | 'categories' | 'settings';
 
 function App() {
-  const [message, setMessage] = useState<string>('');
+  const [activeView, setActiveView] = useState<NavItem>('dashboard');
 
-  useEffect(() => {
-    const api = (window as Window & typeof globalThis & { electronAPI?: { onMainProcessMessage: (cb: (msg: string) => void) => void } }).electronAPI;
-    api?.onMainProcessMessage((msg) => setMessage(msg));
-  }, []);
+  function renderView() {
+    switch (activeView) {
+      case 'dashboard':
+        return <DashboardView />;
+      case 'transactions':
+        return <TransactionsView />;
+      case 'import':
+        return <ImportView />;
+      case 'categories':
+        return <CategoriesView />;
+      case 'settings':
+        return <SettingsView />;
+    }
+  }
 
   return (
-    <div className="app">
-      <header className="app-header">
-        <h1>SpendStack</h1>
-        <p>Local-first personal finance</p>
-        {message && <p className="ipc-message">Ready at {message}</p>}
-      </header>
+    <div className="app-shell">
+      <Sidebar activeView={activeView} onNavigate={setActiveView} />
+      <main className="app-main">{renderView()}</main>
     </div>
   );
 }
