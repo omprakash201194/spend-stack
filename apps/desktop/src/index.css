@@ -175,6 +175,18 @@ body {
   color: #475569;
 }
 
+/* ── IPC status indicator ── */
+.ipc-status {
+  font-size: 0.75rem;
+  color: #475569;
+  margin-bottom: 1.5rem;
+  padding: 0.5rem 0.75rem;
+  background-color: #0a1120;
+  border: 1px solid #1e293b;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, 'Courier New', monospace;
+}
+
 /* ── Empty state ── */
 .empty-state {
   text-align: center;

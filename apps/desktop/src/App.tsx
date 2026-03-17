@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Sidebar from './components/Sidebar.js';
 import DashboardView from './views/DashboardView.js';
 import TransactionsView from './views/TransactionsView.js';
@@ -10,11 +10,20 @@ export type NavItem = 'dashboard' | 'transactions' | 'import' | 'categories' | '
 
 function App() {
   const [activeView, setActiveView] = useState<NavItem>('dashboard');
+  const [ipcMessage, setIpcMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Subscribe to the main-process ready message via the secure IPC bridge.
+    const cleanup = window.electronAPI?.onMainProcessMessage((msg) => {
+      setIpcMessage(msg);
+    });
+    return cleanup ?? undefined;
+  }, []);
 
   function renderView() {
     switch (activeView) {
       case 'dashboard':
-        return <DashboardView />;
+        return <DashboardView ipcMessage={ipcMessage} />;
       case 'transactions':
         return <TransactionsView />;
       case 'import':
