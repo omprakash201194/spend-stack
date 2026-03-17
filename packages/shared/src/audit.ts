@@ -39,7 +39,13 @@ export type AuditEventType =
   // Transaction events
   | 'transaction.reviewed'
   | 'transaction.categorized'
-  | 'transaction.flagged';
+  | 'transaction.flagged'
+  // Insight & analytics events
+  | 'insight.consent_granted'
+  | 'insight.consent_revoked'
+  | 'insight.balance_summary_computed'
+  | 'insight.cashflow_summary_computed'
+  | 'insight.ai_insights_requested';
 
 /**
  * A single audit event.
