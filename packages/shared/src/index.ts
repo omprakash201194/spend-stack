@@ -59,3 +59,25 @@ export type {
   DiagnosticsBundle,
   BuildDiagnosticsBundleOptions,
 } from './diagnostics.js';
+
+export {
+  computeBalanceSummary,
+  computeCashflowSummary,
+  createInsightConsent,
+  revokeInsightConsent,
+  hasInsightConsent,
+  canRunAiInsights,
+  INSIGHT_CONSENT_SCHEMA_VERSION,
+} from './insights.js';
+export type {
+  InsightTransaction,
+  BalanceSummary,
+  BalanceSummaryOptions,
+  CashflowSummary,
+  CashflowSummaryOptions,
+  InsightConsentSchemaVersion,
+  InsightConsentScope,
+  InsightDataScope,
+  InsightConsent,
+  CreateInsightConsentParams,
+} from './insights.js';

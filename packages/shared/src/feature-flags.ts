@@ -19,6 +19,10 @@ export const FEATURE_FLAGS = {
   multiCurrency: false,
   /** Enable verbose diagnostic logging in production builds. */
   verboseLogs: false,
+  /** Enable the balance and cashflow insights panel. */
+  insightsEnabled: false,
+  /** Enable AI-assisted insight generation (requires explicit user consent). */
+  aiInsights: false,
 } as const;
 
 export type FeatureFlagName = keyof typeof FEATURE_FLAGS;
