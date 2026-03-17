@@ -32,5 +32,9 @@
     "prettier": "3.8.1",
     "typescript": "5.9.3",
     "vitest": "3.2.4"
+  },
+  "overrides": {
+    "glob": "^13.0.0",
+    "global-agent": "4.1.3"
   }
 }
