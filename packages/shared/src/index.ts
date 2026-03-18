@@ -11,6 +11,15 @@ export {
   verifyPin,
   removePin,
   toPublicProfile,
+  createProfileStore,
+  addProfileToStore,
+  removeProfileFromStore,
+  listProfiles,
+  getProfileById,
+  switchActiveProfile,
+  getActiveProfile,
+  createProfileDataScope,
+  scopeMatchesProfile,
 } from './identity.js';
 export type {
   UserId,
@@ -18,6 +27,8 @@ export type {
   PublicUserProfile,
   CreateProfileInput,
   AuthResult,
+  ProfileStore,
+  ProfileDataScope,
 } from './identity.js';
 
 export {
