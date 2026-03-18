@@ -53,6 +53,8 @@ export {
   getMemberRole,
   createPrivacyRule,
   resolveVisibility,
+  evaluateAccessPolicy,
+  filterVisibleResources,
   createWorkspaceDataScope,
   scopeMatchesWorkspace,
   createWorkspaceStore,
@@ -62,6 +64,10 @@ export {
   getMembersForWorkspace,
   addMemberToWorkspaceStore,
   removeMemberFromWorkspaceStore,
+  addPrivacyRuleToStore,
+  removePrivacyRuleFromStore,
+  getPrivacyRulesForWorkspace,
+  getPrivacyRuleForResource,
 } from './workspace.js';
 export type {
   WorkspaceId,
@@ -75,6 +81,9 @@ export type {
   WorkspaceContextKind,
   WorkspaceDataScope,
   WorkspaceStore,
+  AccessPolicyDecision,
+  AccessPolicyDenialReason,
+  AccessPolicyResult,
 } from './workspace.js';
 
 export {

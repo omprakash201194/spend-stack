@@ -25,6 +25,8 @@ export const FEATURE_FLAGS = {
   aiInsights: false,
   /** Enable optional PIN convenience unlock after primary authentication. */
   pinUnlock: false,
+  /** Enable relationship-based privacy controls inside a family workspace. */
+  familyPrivacyControls: false,
 } as const;
 
 export type FeatureFlagName = keyof typeof FEATURE_FLAGS;
