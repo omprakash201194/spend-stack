@@ -5,6 +5,8 @@
  * Keep this file in sync with electron/preload.ts.
  */
 
+import type { FeatureFlagName } from '@spendstack/shared';
+
 export interface ElectronAPI {
   /**
    * Subscribe to a timestamped message sent by the main process after the
@@ -12,6 +14,12 @@ export interface ElectronAPI {
    * listener.
    */
   onMainProcessMessage: (callback: (message: string) => void) => () => void;
+
+  /**
+   * Returns a snapshot of all resolved feature flags.
+   * Flags are resolved in priority order: runtime overrides → env var → defaults.
+   */
+  getFlags: () => Promise<Record<FeatureFlagName, boolean>>;
 }
 
 declare global {
