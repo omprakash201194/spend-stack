@@ -32,6 +32,12 @@ export type AuditEventType =
   // Workspace events
   | 'workspace.created'
   | 'workspace.member_added'
+  | 'workspace.member_removed'
+  // Privacy events
+  | 'privacy.rule_created'
+  | 'privacy.rule_updated'
+  | 'privacy.rule_deleted'
+  | 'privacy.access_denied'
   // Import events
   | 'import.started'
   | 'import.completed'

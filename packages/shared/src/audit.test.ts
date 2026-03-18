@@ -239,3 +239,65 @@ describe('formatAuditHistory', () => {
     expect(result).toContain('system →');
   });
 });
+
+// ── Privacy audit event types ─────────────────────────────────────────────────
+
+describe('Privacy and workspace audit events', () => {
+  it('creates a workspace.member_removed event', () => {
+    const event = createAuditEvent({
+      type: 'workspace.member_removed',
+      actorId: 'u-owner',
+      resourceType: 'workspace',
+      resourceId: 'ws-1',
+      metadata: { removedUserId: 'u-member' },
+    });
+    expect(event.type).toBe('workspace.member_removed');
+    expect(event.metadata['removedUserId']).toBe('u-member');
+  });
+
+  it('creates a privacy.rule_created event', () => {
+    const event = createAuditEvent({
+      type: 'privacy.rule_created',
+      actorId: 'u-owner',
+      resourceType: 'privacy_rule',
+      resourceId: 'rule-42',
+      metadata: { scope: 'shared', resourceType: 'account' },
+    });
+    expect(event.type).toBe('privacy.rule_created');
+    expect(event.metadata['scope']).toBe('shared');
+  });
+
+  it('creates a privacy.rule_updated event', () => {
+    const event = createAuditEvent({
+      type: 'privacy.rule_updated',
+      actorId: 'u-owner',
+      resourceType: 'privacy_rule',
+      resourceId: 'rule-42',
+      metadata: { previousScope: 'shared', newScope: 'workspace' },
+    });
+    expect(event.type).toBe('privacy.rule_updated');
+  });
+
+  it('creates a privacy.rule_deleted event', () => {
+    const event = createAuditEvent({
+      type: 'privacy.rule_deleted',
+      actorId: 'u-owner',
+      resourceType: 'privacy_rule',
+      resourceId: 'rule-42',
+      metadata: {},
+    });
+    expect(event.type).toBe('privacy.rule_deleted');
+  });
+
+  it('creates a privacy.access_denied event', () => {
+    const event = createAuditEvent({
+      type: 'privacy.access_denied',
+      actorId: 'u-viewer',
+      resourceType: 'account',
+      resourceId: 'acc-1',
+      metadata: { reason: 'scope_shared', workspaceId: 'ws-1' },
+    });
+    expect(event.type).toBe('privacy.access_denied');
+    expect(event.metadata['reason']).toBe('scope_shared');
+  });
+});

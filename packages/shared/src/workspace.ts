@@ -267,7 +267,8 @@ export function scopeMatchesWorkspace(
 // ── Workspace store ───────────────────────────────────────────────────────────
 
 /**
- * An in-memory store that holds all workspaces and their membership lists.
+ * An in-memory store that holds all workspaces, their membership lists, and
+ * privacy rules.
  * Designed for use in the local application layer; persist to SQLite via the
  * database package for durability.
  */
@@ -279,6 +280,12 @@ export interface WorkspaceStore {
    * Each entry is a read-only snapshot of the workspace's current member list.
    */
   readonly memberships: Readonly<Record<WorkspaceId, readonly WorkspaceMember[]>>;
+  /**
+   * Privacy rules, keyed by workspace ID.
+   * Each entry is a read-only snapshot of the workspace's current rules.
+   * At most one rule exists per `(resourceType, resourceId)` pair.
+   */
+  readonly privacyRules: Readonly<Record<WorkspaceId, readonly PrivacyRule[]>>;
 }
 
 /**
@@ -293,6 +300,7 @@ export function createWorkspaceStore(): WorkspaceStore {
   return {
     workspaces: Object.create(null) as Record<WorkspaceId, FamilyWorkspace>,
     memberships: Object.create(null) as Record<WorkspaceId, WorkspaceMember[]>,
+    privacyRules: Object.create(null) as Record<WorkspaceId, PrivacyRule[]>,
   };
 }
 
@@ -329,7 +337,7 @@ export function addWorkspaceToStore(
     store.memberships,
     { [workspace.id]: [ownerMembership] },
   );
-  return { workspaces, memberships };
+  return { ...store, workspaces, memberships };
 }
 
 /**
@@ -462,4 +470,201 @@ export function resolveVisibility(
       // Any workspace member
       return role !== undefined;
   }
+}
+
+// ── Explicit access policy evaluation ────────────────────────────────────────
+
+/**
+ * The outcome of an access-policy evaluation.
+ * `'allowed'` means the requesting user may see the resource.
+ * `'denied'` means they may not; the `reason` field explains why.
+ */
+export type AccessPolicyDecision = 'allowed' | 'denied';
+
+/**
+ * Structured reason for an access denial — suitable for audit logging.
+ *
+ * | reason          | meaning                                              |
+ * |-----------------|------------------------------------------------------|
+ * | `no_rule`       | no privacy rule exists for this resource             |
+ * | `not_member`    | requester is not a member of the workspace           |
+ * | `scope_private` | rule scope is 'private' and requester is not owner   |
+ * | `scope_shared`  | rule scope is 'shared' and requester lacks elevation |
+ */
+export type AccessPolicyDenialReason =
+  | 'no_rule'
+  | 'not_member'
+  | 'scope_private'
+  | 'scope_shared';
+
+export interface AccessPolicyResult {
+  decision: AccessPolicyDecision;
+  /** Present only when `decision` is `'denied'`. */
+  reason?: AccessPolicyDenialReason;
+}
+
+/**
+ * Evaluates the access policy for a single resource explicitly.
+ *
+ * Prefer this function over `resolveVisibility` wherever an auditable,
+ * structured result is required (e.g. before returning data from a service
+ * or recording a `privacy.access_denied` audit event).
+ *
+ * @example
+ * ```ts
+ * const result = evaluateAccessPolicy(rule, requestingUserId, members);
+ * if (result.decision === 'denied') {
+ *   // emit audit event with result.reason
+ * }
+ * ```
+ */
+export function evaluateAccessPolicy(
+  rule: PrivacyRule | undefined,
+  requestingUserId: UserId,
+  members: WorkspaceMember[],
+): AccessPolicyResult {
+  if (!rule) {
+    return { decision: 'denied', reason: 'no_rule' };
+  }
+
+  if (rule.ownerId === requestingUserId) {
+    return { decision: 'allowed' };
+  }
+
+  const role = getMemberRole(members, requestingUserId);
+
+  if (role === undefined) {
+    return { decision: 'denied', reason: 'not_member' };
+  }
+
+  switch (rule.scope) {
+    case 'private':
+      return { decision: 'denied', reason: 'scope_private' };
+
+    case 'shared':
+      if (role === 'owner' || role === 'member') {
+        return { decision: 'allowed' };
+      }
+      return { decision: 'denied', reason: 'scope_shared' };
+
+    case 'workspace':
+      return { decision: 'allowed' };
+  }
+}
+
+/**
+ * Filters `items` to those visible to `requestingUserId` according to the
+ * supplied privacy rules and workspace membership.
+ *
+ * `getId` maps each item to its resource ID so that the matching privacy rule
+ * can be located. Items with no matching rule are treated as having no rule
+ * (denied by default).
+ *
+ * Typical use: apply before returning a list of accounts or transactions to
+ * a UI component or service API response.
+ *
+ * @example
+ * ```ts
+ * const visible = filterVisibleResources(
+ *   accounts,
+ *   (a) => a.id,
+ *   rules,
+ *   requestingUserId,
+ *   members,
+ * );
+ * ```
+ */
+export function filterVisibleResources<T>(
+  items: T[],
+  getId: (item: T) => string,
+  rules: PrivacyRule[],
+  requestingUserId: UserId,
+  members: WorkspaceMember[],
+): T[] {
+  const ruleMap = new Map(rules.map((r) => [r.resourceId, r]));
+  return items.filter(
+    (item) =>
+      evaluateAccessPolicy(ruleMap.get(getId(item)), requestingUserId, members).decision ===
+      'allowed',
+  );
+}
+
+// ── Privacy rule store ────────────────────────────────────────────────────────
+
+/**
+ * Adds a privacy rule to the store for the specified workspace.
+ * If a rule already exists for the same `(resourceType, resourceId)` pair it
+ * is replaced (upsert semantics — one rule per resource).
+ * Returns a new `WorkspaceStore`; the original is not mutated.
+ * Throws if the workspace is not found.
+ */
+export function addPrivacyRuleToStore(
+  store: WorkspaceStore,
+  rule: PrivacyRule,
+): WorkspaceStore {
+  if (!Object.hasOwn(store.workspaces, rule.workspaceId)) {
+    throw new Error(`Workspace with ID ${rule.workspaceId} not found`);
+  }
+  const existing = store.privacyRules[rule.workspaceId] ?? [];
+  // Replace any existing rule for the same resource (upsert)
+  const replaced = existing.filter(
+    (r) => !(r.resourceType === rule.resourceType && r.resourceId === rule.resourceId),
+  );
+  const privacyRules = Object.assign(
+    Object.create(null) as Record<WorkspaceId, PrivacyRule[]>,
+    store.privacyRules,
+    { [rule.workspaceId]: [...replaced, rule] },
+  );
+  return { ...store, privacyRules };
+}
+
+/**
+ * Removes a privacy rule from the store by rule ID.
+ * Returns a new `WorkspaceStore`; the original is not mutated.
+ * Throws if the workspace is not found or the rule does not exist.
+ */
+export function removePrivacyRuleFromStore(
+  store: WorkspaceStore,
+  workspaceId: WorkspaceId,
+  ruleId: string,
+): WorkspaceStore {
+  if (!Object.hasOwn(store.workspaces, workspaceId)) {
+    throw new Error(`Workspace with ID ${workspaceId} not found`);
+  }
+  const existing = store.privacyRules[workspaceId] ?? [];
+  if (!existing.some((r) => r.id === ruleId)) {
+    throw new Error(`Privacy rule ${ruleId} not found in workspace ${workspaceId}`);
+  }
+  const privacyRules = Object.assign(
+    Object.create(null) as Record<WorkspaceId, PrivacyRule[]>,
+    store.privacyRules,
+    { [workspaceId]: existing.filter((r) => r.id !== ruleId) },
+  );
+  return { ...store, privacyRules };
+}
+
+/**
+ * Returns all privacy rules for the specified workspace as an array.
+ * Returns an empty array if no rules exist.
+ */
+export function getPrivacyRulesForWorkspace(
+  store: WorkspaceStore,
+  workspaceId: WorkspaceId,
+): PrivacyRule[] {
+  return Object.hasOwn(store.privacyRules, workspaceId)
+    ? [...store.privacyRules[workspaceId]]
+    : [];
+}
+
+/**
+ * Returns the privacy rule for a specific resource, or `undefined` if none exists.
+ */
+export function getPrivacyRuleForResource(
+  store: WorkspaceStore,
+  workspaceId: WorkspaceId,
+  resourceType: PrivacyResourceType,
+  resourceId: string,
+): PrivacyRule | undefined {
+  const rules = store.privacyRules[workspaceId] ?? [];
+  return rules.find((r) => r.resourceType === resourceType && r.resourceId === resourceId);
 }

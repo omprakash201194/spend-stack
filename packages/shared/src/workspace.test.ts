@@ -7,6 +7,8 @@ import {
   getMemberRole,
   createPrivacyRule,
   resolveVisibility,
+  evaluateAccessPolicy,
+  filterVisibleResources,
   createWorkspaceDataScope,
   scopeMatchesWorkspace,
   createWorkspaceStore,
@@ -16,6 +18,10 @@ import {
   getMembersForWorkspace,
   addMemberToWorkspaceStore,
   removeMemberFromWorkspaceStore,
+  addPrivacyRuleToStore,
+  removePrivacyRuleFromStore,
+  getPrivacyRulesForWorkspace,
+  getPrivacyRuleForResource,
 } from './workspace.js';
 import type { WorkspaceMember } from './workspace.js';
 
@@ -478,5 +484,267 @@ describe('WorkspaceStore', () => {
   it('removeMemberFromWorkspaceStore: throws for unknown workspace', () => {
     const { store } = makePopulatedStore();
     expect(() => removeMemberFromWorkspaceStore(store, 'no-such-ws', 'u-x')).toThrow('not found');
+  });
+});
+
+// ── evaluateAccessPolicy ──────────────────────────────────────────────────────
+
+describe('evaluateAccessPolicy', () => {
+  function makeMembers() {
+    const { workspace, ownerMembership } = createFamilyWorkspace({ name: 'WS', ownerId: 'u-owner' });
+    const member = addWorkspaceMember(workspace, 'u-member');
+    const viewer = addWorkspaceMember(workspace, 'u-viewer', 'viewer');
+    return { workspace, members: [ownerMembership, member, viewer] };
+  }
+
+  it('returns allowed for the resource owner regardless of scope', () => {
+    const { workspace, members } = makeMembers();
+    const rule = createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'private');
+    const result = evaluateAccessPolicy(rule, 'u-owner', members);
+    expect(result.decision).toBe('allowed');
+    expect(result.reason).toBeUndefined();
+  });
+
+  it('returns denied with reason no_rule when rule is undefined', () => {
+    const { members } = makeMembers();
+    const result = evaluateAccessPolicy(undefined, 'u-member', members);
+    expect(result.decision).toBe('denied');
+    expect(result.reason).toBe('no_rule');
+  });
+
+  it('returns denied with reason not_member for a non-workspace user', () => {
+    const { workspace, members } = makeMembers();
+    const rule = createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'workspace');
+    const result = evaluateAccessPolicy(rule, 'u-outsider', members);
+    expect(result.decision).toBe('denied');
+    expect(result.reason).toBe('not_member');
+  });
+
+  it('returns denied with reason scope_private for member accessing private rule', () => {
+    const { workspace, members } = makeMembers();
+    const rule = createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'private');
+    const result = evaluateAccessPolicy(rule, 'u-member', members);
+    expect(result.decision).toBe('denied');
+    expect(result.reason).toBe('scope_private');
+  });
+
+  it('returns denied with reason scope_private for viewer accessing private rule', () => {
+    const { workspace, members } = makeMembers();
+    const rule = createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'private');
+    const result = evaluateAccessPolicy(rule, 'u-viewer', members);
+    expect(result.decision).toBe('denied');
+    expect(result.reason).toBe('scope_private');
+  });
+
+  it('returns allowed for member accessing shared rule', () => {
+    const { workspace, members } = makeMembers();
+    const rule = createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'shared');
+    const result = evaluateAccessPolicy(rule, 'u-member', members);
+    expect(result.decision).toBe('allowed');
+  });
+
+  it('returns denied with reason scope_shared for viewer accessing shared rule', () => {
+    const { workspace, members } = makeMembers();
+    const rule = createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'shared');
+    const result = evaluateAccessPolicy(rule, 'u-viewer', members);
+    expect(result.decision).toBe('denied');
+    expect(result.reason).toBe('scope_shared');
+  });
+
+  it('returns allowed for viewer accessing workspace-scoped rule', () => {
+    const { workspace, members } = makeMembers();
+    const rule = createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'workspace');
+    const result = evaluateAccessPolicy(rule, 'u-viewer', members);
+    expect(result.decision).toBe('allowed');
+  });
+
+  it('returns allowed for member accessing workspace-scoped rule', () => {
+    const { workspace, members } = makeMembers();
+    const rule = createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'workspace');
+    const result = evaluateAccessPolicy(rule, 'u-member', members);
+    expect(result.decision).toBe('allowed');
+  });
+});
+
+// ── filterVisibleResources ────────────────────────────────────────────────────
+
+describe('filterVisibleResources', () => {
+  function makeSetup() {
+    const { workspace, ownerMembership } = createFamilyWorkspace({ name: 'WS', ownerId: 'u-owner' });
+    const member = addWorkspaceMember(workspace, 'u-member');
+    const viewer = addWorkspaceMember(workspace, 'u-viewer', 'viewer');
+    return { workspace, members: [ownerMembership, member, viewer] };
+  }
+
+  it('returns items whose rule grants access', () => {
+    const { workspace, members } = makeSetup();
+    const items = [{ id: 'acc-1' }, { id: 'acc-2' }];
+    const rules = [
+      createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'workspace'),
+      createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-2', 'private'),
+    ];
+    const visible = filterVisibleResources(items, (a) => a.id, rules, 'u-viewer', members);
+    expect(visible).toHaveLength(1);
+    expect(visible[0].id).toBe('acc-1');
+  });
+
+  it('excludes items with no matching rule', () => {
+    const { workspace, members } = makeSetup();
+    const items = [{ id: 'acc-1' }, { id: 'acc-orphan' }];
+    const rules = [createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'workspace')];
+    const visible = filterVisibleResources(items, (a) => a.id, rules, 'u-viewer', members);
+    expect(visible).toHaveLength(1);
+    expect(visible[0].id).toBe('acc-1');
+  });
+
+  it('returns all items when all rules are workspace-scoped', () => {
+    const { workspace, members } = makeSetup();
+    const items = [{ id: 'acc-1' }, { id: 'acc-2' }];
+    const rules = [
+      createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'workspace'),
+      createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-2', 'workspace'),
+    ];
+    const visible = filterVisibleResources(items, (a) => a.id, rules, 'u-viewer', members);
+    expect(visible).toHaveLength(2);
+  });
+
+  it('returns empty array for outsider even when rules are workspace-scoped', () => {
+    const { workspace, members } = makeSetup();
+    const items = [{ id: 'acc-1' }];
+    const rules = [createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'workspace')];
+    const visible = filterVisibleResources(items, (a) => a.id, rules, 'u-outsider', members);
+    expect(visible).toHaveLength(0);
+  });
+
+  it('owner can see all their items regardless of scope', () => {
+    const { workspace, members } = makeSetup();
+    const items = [{ id: 'acc-1' }, { id: 'acc-2' }];
+    const rules = [
+      createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'private'),
+      createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-2', 'shared'),
+    ];
+    const visible = filterVisibleResources(items, (a) => a.id, rules, 'u-owner', members);
+    expect(visible).toHaveLength(2);
+  });
+});
+
+// ── Privacy rule store ────────────────────────────────────────────────────────
+
+describe('Privacy rule store', () => {
+  function makePopulatedStore() {
+    const { workspace, ownerMembership } = createFamilyWorkspace({ name: 'Family', ownerId: 'u-owner' });
+    const store = addWorkspaceToStore(createWorkspaceStore(), workspace, ownerMembership);
+    return { store, workspace };
+  }
+
+  it('getPrivacyRulesForWorkspace: returns empty array when no rules exist', () => {
+    const { store, workspace } = makePopulatedStore();
+    expect(getPrivacyRulesForWorkspace(store, workspace.id)).toEqual([]);
+  });
+
+  it('getPrivacyRulesForWorkspace: returns empty array for unknown workspace', () => {
+    const { store } = makePopulatedStore();
+    expect(getPrivacyRulesForWorkspace(store, 'no-such-ws')).toEqual([]);
+  });
+
+  it('addPrivacyRuleToStore: adds a rule', () => {
+    const { store, workspace } = makePopulatedStore();
+    const rule = createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'shared');
+    const updated = addPrivacyRuleToStore(store, rule);
+    const rules = getPrivacyRulesForWorkspace(updated, workspace.id);
+    expect(rules).toHaveLength(1);
+    expect(rules[0].scope).toBe('shared');
+  });
+
+  it('addPrivacyRuleToStore: does not mutate the original store', () => {
+    const { store, workspace } = makePopulatedStore();
+    const rule = createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'shared');
+    addPrivacyRuleToStore(store, rule);
+    expect(getPrivacyRulesForWorkspace(store, workspace.id)).toHaveLength(0);
+  });
+
+  it('addPrivacyRuleToStore: replaces existing rule for same resource (upsert)', () => {
+    const { store, workspace } = makePopulatedStore();
+    const rule1 = createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'shared');
+    const storeWithRule = addPrivacyRuleToStore(store, rule1);
+    const rule2 = createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'workspace');
+    const updated = addPrivacyRuleToStore(storeWithRule, rule2);
+    const rules = getPrivacyRulesForWorkspace(updated, workspace.id);
+    expect(rules).toHaveLength(1);
+    expect(rules[0].scope).toBe('workspace');
+  });
+
+  it('addPrivacyRuleToStore: allows distinct rules for different resources', () => {
+    const { store, workspace } = makePopulatedStore();
+    const rule1 = createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'private');
+    const rule2 = createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-2', 'workspace');
+    const updated = addPrivacyRuleToStore(addPrivacyRuleToStore(store, rule1), rule2);
+    expect(getPrivacyRulesForWorkspace(updated, workspace.id)).toHaveLength(2);
+  });
+
+  it('addPrivacyRuleToStore: throws for unknown workspace', () => {
+    const { store } = makePopulatedStore();
+    const rule = createPrivacyRule('no-such-ws', 'u-owner', 'account', 'acc-1', 'shared');
+    expect(() => addPrivacyRuleToStore(store, rule)).toThrow('not found');
+  });
+
+  it('removePrivacyRuleFromStore: removes an existing rule', () => {
+    const { store, workspace } = makePopulatedStore();
+    const rule = createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'shared');
+    const storeWithRule = addPrivacyRuleToStore(store, rule);
+    const removed = removePrivacyRuleFromStore(storeWithRule, workspace.id, rule.id);
+    expect(getPrivacyRulesForWorkspace(removed, workspace.id)).toHaveLength(0);
+  });
+
+  it('removePrivacyRuleFromStore: does not mutate original store', () => {
+    const { store, workspace } = makePopulatedStore();
+    const rule = createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'shared');
+    const storeWithRule = addPrivacyRuleToStore(store, rule);
+    removePrivacyRuleFromStore(storeWithRule, workspace.id, rule.id);
+    expect(getPrivacyRulesForWorkspace(storeWithRule, workspace.id)).toHaveLength(1);
+  });
+
+  it('removePrivacyRuleFromStore: throws for unknown workspace', () => {
+    const { store } = makePopulatedStore();
+    expect(() => removePrivacyRuleFromStore(store, 'no-such-ws', 'rule-1')).toThrow('not found');
+  });
+
+  it('removePrivacyRuleFromStore: throws when rule does not exist', () => {
+    const { store, workspace } = makePopulatedStore();
+    expect(() => removePrivacyRuleFromStore(store, workspace.id, 'no-such-rule')).toThrow(
+      'not found',
+    );
+  });
+
+  it('getPrivacyRuleForResource: returns matching rule', () => {
+    const { store, workspace } = makePopulatedStore();
+    const rule = createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'shared');
+    const updated = addPrivacyRuleToStore(store, rule);
+    const found = getPrivacyRuleForResource(updated, workspace.id, 'account', 'acc-1');
+    expect(found).toBeDefined();
+    expect(found?.id).toBe(rule.id);
+  });
+
+  it('getPrivacyRuleForResource: returns undefined when no match', () => {
+    const { store, workspace } = makePopulatedStore();
+    expect(getPrivacyRuleForResource(store, workspace.id, 'account', 'acc-1')).toBeUndefined();
+  });
+
+  it('getPrivacyRuleForResource: distinguishes by resourceType', () => {
+    const { store, workspace } = makePopulatedStore();
+    const rule = createPrivacyRule(workspace.id, 'u-owner', 'account', 'res-1', 'shared');
+    const updated = addPrivacyRuleToStore(store, rule);
+    expect(
+      getPrivacyRuleForResource(updated, workspace.id, 'transaction', 'res-1'),
+    ).toBeUndefined();
+  });
+
+  it('WorkspaceStore preserves privacyRules across member operations', () => {
+    const { store, workspace } = makePopulatedStore();
+    const rule = createPrivacyRule(workspace.id, 'u-owner', 'account', 'acc-1', 'workspace');
+    const storeWithRule = addPrivacyRuleToStore(store, rule);
+    const member = addWorkspaceMember(workspace, 'u-extra');
+    const storeWithMember = addMemberToWorkspaceStore(storeWithRule, workspace.id, member);
+    expect(getPrivacyRulesForWorkspace(storeWithMember, workspace.id)).toHaveLength(1);
   });
 });
