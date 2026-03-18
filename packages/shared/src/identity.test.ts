@@ -6,6 +6,15 @@ import {
   verifyPin,
   removePin,
   toPublicProfile,
+  createProfileStore,
+  addProfileToStore,
+  removeProfileFromStore,
+  listProfiles,
+  getProfileById,
+  switchActiveProfile,
+  getActiveProfile,
+  createProfileDataScope,
+  scopeMatchesProfile,
 } from './identity.js';
 
 describe('createUserProfile', () => {
@@ -194,5 +203,195 @@ describe('toPublicProfile', () => {
     expect(pub.email).toBe(profile.email);
     expect(pub.createdAt).toBe(profile.createdAt);
     expect(pub.updatedAt).toBe(profile.updatedAt);
+  });
+});
+
+describe('createProfileStore', () => {
+  it('creates an empty store with no profiles and no active profile', () => {
+    const store = createProfileStore();
+    expect(Object.keys(store.profiles)).toHaveLength(0);
+    expect(store.activeProfileId).toBeNull();
+  });
+});
+
+describe('addProfileToStore', () => {
+  it('adds a profile to the store', () => {
+    const profile = createUserProfile({ name: 'Alice', email: 'a@b.com', password: 'pw' });
+    const store = addProfileToStore(createProfileStore(), profile);
+    expect(store.profiles[profile.id]).toEqual(profile);
+  });
+
+  it('supports adding multiple profiles', () => {
+    const p1 = createUserProfile({ name: 'Alice', email: 'a@b.com', password: 'pw' });
+    const p2 = createUserProfile({ name: 'Bob', email: 'b@b.com', password: 'pw' });
+    const store = addProfileToStore(addProfileToStore(createProfileStore(), p1), p2);
+    expect(Object.keys(store.profiles)).toHaveLength(2);
+  });
+
+  it('does not mutate the original store', () => {
+    const profile = createUserProfile({ name: 'Alice', email: 'a@b.com', password: 'pw' });
+    const original = createProfileStore();
+    addProfileToStore(original, profile);
+    expect(Object.keys(original.profiles)).toHaveLength(0);
+  });
+
+  it('throws when adding a profile with a duplicate ID', () => {
+    const profile = createUserProfile({ name: 'Alice', email: 'a@b.com', password: 'pw' });
+    const store = addProfileToStore(createProfileStore(), profile);
+    expect(() => addProfileToStore(store, profile)).toThrow(/already exists/i);
+  });
+});
+
+describe('removeProfileFromStore', () => {
+  it('removes a profile from the store', () => {
+    const profile = createUserProfile({ name: 'Alice', email: 'a@b.com', password: 'pw' });
+    const store = addProfileToStore(createProfileStore(), profile);
+    const updated = removeProfileFromStore(store, profile.id);
+    expect(updated.profiles[profile.id]).toBeUndefined();
+  });
+
+  it('does not mutate the original store', () => {
+    const profile = createUserProfile({ name: 'Alice', email: 'a@b.com', password: 'pw' });
+    const store = addProfileToStore(createProfileStore(), profile);
+    removeProfileFromStore(store, profile.id);
+    expect(store.profiles[profile.id]).toEqual(profile);
+  });
+
+  it('resets activeProfileId to null when the active profile is removed', () => {
+    const profile = createUserProfile({ name: 'Alice', email: 'a@b.com', password: 'pw' });
+    let store = addProfileToStore(createProfileStore(), profile);
+    store = switchActiveProfile(store, profile.id);
+    store = removeProfileFromStore(store, profile.id);
+    expect(store.activeProfileId).toBeNull();
+  });
+
+  it('preserves activeProfileId when a different profile is removed', () => {
+    const p1 = createUserProfile({ name: 'Alice', email: 'a@b.com', password: 'pw' });
+    const p2 = createUserProfile({ name: 'Bob', email: 'b@b.com', password: 'pw' });
+    let store = addProfileToStore(addProfileToStore(createProfileStore(), p1), p2);
+    store = switchActiveProfile(store, p1.id);
+    store = removeProfileFromStore(store, p2.id);
+    expect(store.activeProfileId).toBe(p1.id);
+  });
+
+  it('throws when the profile does not exist', () => {
+    expect(() => removeProfileFromStore(createProfileStore(), 'nonexistent')).toThrow(
+      /not found/i,
+    );
+  });
+});
+
+describe('listProfiles', () => {
+  it('returns an empty array for an empty store', () => {
+    expect(listProfiles(createProfileStore())).toEqual([]);
+  });
+
+  it('returns public profiles for all stored profiles', () => {
+    const p1 = createUserProfile({ name: 'Alice', email: 'a@b.com', password: 'pw' });
+    const p2 = createUserProfile({ name: 'Bob', email: 'b@b.com', password: 'pw' });
+    const store = addProfileToStore(addProfileToStore(createProfileStore(), p1), p2);
+    const list = listProfiles(store);
+    expect(list).toHaveLength(2);
+    expect(list.every((p) => !('passwordHash' in p))).toBe(true);
+  });
+});
+
+describe('getProfileById', () => {
+  it('returns the full profile for a known ID', () => {
+    const profile = createUserProfile({ name: 'Alice', email: 'a@b.com', password: 'pw' });
+    const store = addProfileToStore(createProfileStore(), profile);
+    expect(getProfileById(store, profile.id)).toEqual(profile);
+  });
+
+  it('returns undefined for an unknown ID', () => {
+    expect(getProfileById(createProfileStore(), 'ghost')).toBeUndefined();
+  });
+});
+
+describe('switchActiveProfile', () => {
+  it('sets the active profile ID', () => {
+    const profile = createUserProfile({ name: 'Alice', email: 'a@b.com', password: 'pw' });
+    const store = switchActiveProfile(addProfileToStore(createProfileStore(), profile), profile.id);
+    expect(store.activeProfileId).toBe(profile.id);
+  });
+
+  it('allows switching between profiles', () => {
+    const p1 = createUserProfile({ name: 'Alice', email: 'a@b.com', password: 'pw' });
+    const p2 = createUserProfile({ name: 'Bob', email: 'b@b.com', password: 'pw' });
+    let store = addProfileToStore(addProfileToStore(createProfileStore(), p1), p2);
+    store = switchActiveProfile(store, p1.id);
+    expect(store.activeProfileId).toBe(p1.id);
+    store = switchActiveProfile(store, p2.id);
+    expect(store.activeProfileId).toBe(p2.id);
+  });
+
+  it('does not mutate the original store', () => {
+    const profile = createUserProfile({ name: 'Alice', email: 'a@b.com', password: 'pw' });
+    const store = addProfileToStore(createProfileStore(), profile);
+    switchActiveProfile(store, profile.id);
+    expect(store.activeProfileId).toBeNull();
+  });
+
+  it('throws when switching to a profile that does not exist', () => {
+    expect(() => switchActiveProfile(createProfileStore(), 'ghost')).toThrow(/not found/i);
+  });
+});
+
+describe('getActiveProfile', () => {
+  it('returns undefined when no profile is active', () => {
+    expect(getActiveProfile(createProfileStore())).toBeUndefined();
+  });
+
+  it('returns the public view of the active profile', () => {
+    const profile = createUserProfile({ name: 'Alice', email: 'a@b.com', password: 'pw' });
+    const store = switchActiveProfile(addProfileToStore(createProfileStore(), profile), profile.id);
+    const active = getActiveProfile(store);
+    expect(active).toBeDefined();
+    expect(active!.id).toBe(profile.id);
+    expect(active!.name).toBe('Alice');
+  });
+
+  it('strips sensitive fields from the active profile', () => {
+    const profile = createUserProfile({ name: 'Alice', email: 'a@b.com', password: 'pw' });
+    const store = switchActiveProfile(addProfileToStore(createProfileStore(), profile), profile.id);
+    const active = getActiveProfile(store) as Record<string, unknown>;
+    expect(active['passwordHash']).toBeUndefined();
+    expect(active['passwordSalt']).toBeUndefined();
+  });
+});
+
+describe('createProfileDataScope / scopeMatchesProfile', () => {
+  it('creates a scope bound to the given profile ID', () => {
+    const scope = createProfileDataScope('user-1');
+    expect(scope.profileId).toBe('user-1');
+  });
+
+  it('throws when profile ID is empty', () => {
+    expect(() => createProfileDataScope('')).toThrow('Profile ID is required');
+  });
+
+  it('returns true when scope matches the profile ID', () => {
+    const scope = createProfileDataScope('user-1');
+    expect(scopeMatchesProfile(scope, 'user-1')).toBe(true);
+  });
+
+  it('returns false when scope does not match the profile ID', () => {
+    const scope = createProfileDataScope('user-1');
+    expect(scopeMatchesProfile(scope, 'user-2')).toBe(false);
+  });
+
+  it('can be used to filter domain objects by active profile', () => {
+    const p1 = createUserProfile({ name: 'Alice', email: 'a@b.com', password: 'pw' });
+    const p2 = createUserProfile({ name: 'Bob', email: 'b@b.com', password: 'pw' });
+
+    const items = [
+      { name: 'Alice account', scope: createProfileDataScope(p1.id) },
+      { name: 'Bob account', scope: createProfileDataScope(p2.id) },
+      { name: 'Alice savings', scope: createProfileDataScope(p1.id) },
+    ];
+
+    const aliceItems = items.filter((i) => scopeMatchesProfile(i.scope, p1.id));
+    expect(aliceItems).toHaveLength(2);
+    expect(aliceItems.every((i) => i.name.startsWith('Alice'))).toBe(true);
   });
 });

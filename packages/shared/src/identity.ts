@@ -175,3 +175,148 @@ export function toPublicProfile(profile: UserProfile): PublicUserProfile {
     updatedAt: profile.updatedAt,
   };
 }
+
+// ── Profile store ─────────────────────────────────────────────────────────────
+
+/**
+ * An in-memory store that holds all local user profiles and tracks
+ * which one is currently active.
+ */
+export interface ProfileStore {
+  /** All profiles, keyed by user ID. */
+  readonly profiles: Readonly<Record<UserId, UserProfile>>;
+  /** The ID of the currently active profile, or `null` when none is selected. */
+  readonly activeProfileId: UserId | null;
+}
+
+/**
+ * Scopes a piece of data to a specific user profile.
+ * Attach this to any domain object (account, transaction, category, …)
+ * to enforce per-profile data isolation.
+ */
+export interface ProfileDataScope {
+  readonly profileId: UserId;
+}
+
+/**
+ * Creates an empty profile store with no profiles and no active profile.
+ *
+ * @example
+ * ```ts
+ * const store = createProfileStore();
+ * ```
+ */
+export function createProfileStore(): ProfileStore {
+  return { profiles: {}, activeProfileId: null };
+}
+
+/**
+ * Adds a profile to the store.
+ * Returns a new `ProfileStore`; the original is not mutated.
+ * Throws if a profile with the same ID already exists.
+ */
+export function addProfileToStore(store: ProfileStore, profile: UserProfile): ProfileStore {
+  if (store.profiles[profile.id] !== undefined) {
+    throw new Error(`Profile with ID ${profile.id} already exists`);
+  }
+  return {
+    ...store,
+    profiles: { ...store.profiles, [profile.id]: profile },
+  };
+}
+
+/**
+ * Removes a profile from the store.
+ * Returns a new `ProfileStore`; the original is not mutated.
+ * If the removed profile was the active one, `activeProfileId` is reset to `null`.
+ * Throws if the profile does not exist in the store.
+ */
+export function removeProfileFromStore(store: ProfileStore, userId: UserId): ProfileStore {
+  if (store.profiles[userId] === undefined) {
+    throw new Error(`Profile with ID ${userId} not found`);
+  }
+  const { [userId]: _removed, ...remaining } = store.profiles;
+  return {
+    profiles: remaining,
+    activeProfileId: store.activeProfileId === userId ? null : store.activeProfileId,
+  };
+}
+
+/**
+ * Returns all profiles in the store as a list of public (safe) views.
+ * Profiles are returned in the order they were added.
+ */
+export function listProfiles(store: ProfileStore): PublicUserProfile[] {
+  return Object.values(store.profiles).map(toPublicProfile);
+}
+
+/**
+ * Returns the full `UserProfile` for the given ID, or `undefined` if not found.
+ */
+export function getProfileById(store: ProfileStore, userId: UserId): UserProfile | undefined {
+  return store.profiles[userId];
+}
+
+/**
+ * Switches the active profile to the specified user ID.
+ * Returns a new `ProfileStore`; the original is not mutated.
+ * Throws if the profile does not exist in the store.
+ *
+ * @example
+ * ```ts
+ * const updated = switchActiveProfile(store, profile.id);
+ * ```
+ */
+export function switchActiveProfile(store: ProfileStore, userId: UserId): ProfileStore {
+  if (store.profiles[userId] === undefined) {
+    throw new Error(`Profile with ID ${userId} not found`);
+  }
+  return { ...store, activeProfileId: userId };
+}
+
+/**
+ * Returns the public view of the currently active profile, or `undefined`
+ * when no profile is active.
+ *
+ * @example
+ * ```ts
+ * const active = getActiveProfile(store);
+ * if (active) { // show active profile name }
+ * ```
+ */
+export function getActiveProfile(store: ProfileStore): PublicUserProfile | undefined {
+  if (store.activeProfileId === null) return undefined;
+  const profile = store.profiles[store.activeProfileId];
+  return profile !== undefined ? toPublicProfile(profile) : undefined;
+}
+
+/**
+ * Creates a `ProfileDataScope` that binds a piece of data to the given profile.
+ * Attach this scope to domain objects (accounts, transactions, categories, …)
+ * to enforce per-profile data isolation.
+ *
+ * @example
+ * ```ts
+ * const scope = createProfileDataScope(profile.id);
+ * const account = { ...newAccount, scope };
+ * ```
+ */
+export function createProfileDataScope(profileId: UserId): ProfileDataScope {
+  if (profileId === '' || profileId === null || profileId === undefined) {
+    throw new Error('Profile ID is required');
+  }
+  return { profileId };
+}
+
+/**
+ * Returns `true` when the given data scope belongs to the specified profile.
+ * Use this to filter domain objects by the active profile.
+ *
+ * @example
+ * ```ts
+ * const myAccounts = allAccounts.filter(a => scopeMatchesProfile(a.scope, activeId));
+ * ```
+ */
+export function scopeMatchesProfile(scope: ProfileDataScope, profileId: UserId): boolean {
+  return scope.profileId === profileId;
+}
