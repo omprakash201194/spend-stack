@@ -222,11 +222,23 @@ body {
   border-radius: 8px;
   margin-bottom: 1.5rem;
   cursor: pointer;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, background-color 0.15s;
+  outline: none;
 }
 
-.import-drop-zone:hover {
+.import-drop-zone:hover,
+.import-drop-zone:focus-visible {
   border-color: #38bdf8;
+}
+
+.import-drop-zone--dragging {
+  border-color: #38bdf8;
+  background-color: #162032;
+}
+
+.import-drop-zone--error {
+  border-color: #f87171;
+  background-color: #1f1515;
 }
 
 .import-drop-zone h3 {
@@ -245,6 +257,201 @@ body {
   margin-top: 0.5rem;
   font-size: 0.75rem !important;
   color: #475569 !important;
+}
+
+.import-validation-error {
+  margin-top: 0.75rem;
+  font-size: 0.8rem !important;
+  color: #f87171 !important;
+}
+
+/* ── Processing / progress ── */
+.import-status {
+  text-align: center;
+  padding: 3rem 1rem;
+  background-color: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+
+.import-status-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.import-status h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #f1f5f9;
+  margin-bottom: 0.4rem;
+}
+
+.import-status p {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin-bottom: 1.25rem;
+}
+
+.import-progress-bar {
+  width: 60%;
+  max-width: 320px;
+  height: 6px;
+  background-color: #334155;
+  border-radius: 3px;
+  margin: 0 auto;
+  overflow: hidden;
+}
+
+.import-progress-bar__fill {
+  height: 100%;
+  background-color: #38bdf8;
+  border-radius: 3px;
+  animation: import-progress-indeterminate 1.4s ease-in-out infinite;
+  transform-origin: left;
+}
+
+@keyframes import-progress-indeterminate {
+  0% { transform: translateX(-100%) scaleX(0.4); }
+  60% { transform: translateX(0%) scaleX(0.8); }
+  100% { transform: translateX(100%) scaleX(0.4); }
+}
+
+/* ── Import result ── */
+.import-result {
+  background-color: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.import-result-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.import-result-icon {
+  font-size: 1.75rem;
+  flex-shrink: 0;
+}
+
+.import-result-header h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #f1f5f9;
+  margin-bottom: 0.2rem;
+}
+
+.import-result-meta {
+  font-size: 0.75rem;
+  color: #475569;
+  font-family: ui-monospace, SFMono-Regular, 'Courier New', monospace;
+}
+
+.import-metrics {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.import-metric {
+  background-color: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.import-metric-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #38bdf8;
+}
+
+.import-metric-label {
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.import-review-notice {
+  font-size: 0.85rem;
+  color: #fbbf24;
+  background-color: #1c1a0e;
+  border: 1px solid #92400e;
+  border-radius: 6px;
+  padding: 0.6rem 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.import-warning-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.import-warning-item {
+  font-size: 0.8rem;
+  color: #fbbf24;
+}
+
+/* ── Import error panel ── */
+.import-error {
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+  background-color: #1f1515;
+  border: 1px solid #7f1d1d;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+
+.import-error h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fca5a5;
+  margin-bottom: 0.4rem;
+}
+
+.import-error-filename {
+  font-size: 0.85rem;
+  color: #94a3b8;
+  margin-bottom: 0.5rem;
+}
+
+.import-error-message {
+  font-size: 0.85rem;
+  color: #f87171;
+  margin-bottom: 1.25rem;
+  max-width: 480px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ── Reset / action button ── */
+.import-reset-btn {
+  display: inline-block;
+  padding: 0.5rem 1.25rem;
+  background-color: #1e3a5f;
+  border: 1px solid #38bdf8;
+  border-radius: 6px;
+  color: #38bdf8;
+  font-size: 0.875rem;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.import-reset-btn:hover {
+  background-color: #164e72;
 }
 
 .import-banks {
