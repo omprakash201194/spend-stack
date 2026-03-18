@@ -293,6 +293,142 @@ export function getActiveProfile(store: ProfileStore): PublicUserProfile | undef
     : undefined;
 }
 
+// ── Session management ────────────────────────────────────────────────────────
+
+/** Default session lifetime: 30 days in seconds. */
+const DEFAULT_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
+
+export interface CreateSessionOptions {
+  /** Session lifetime in seconds. Defaults to 30 days. */
+  ttlSeconds?: number;
+}
+
+/**
+ * An authenticated session binding a user to a validity window.
+ * Contains no secrets — safe to persist to local storage.
+ */
+export interface AuthSession {
+  readonly sessionId: string;
+  readonly userId: UserId;
+  /** ISO 8601 UTC creation timestamp. */
+  readonly createdAt: string;
+  /** ISO 8601 UTC expiry timestamp. */
+  readonly expiresAt: string;
+}
+
+/**
+ * Creates a new session for the given user after a successful authentication.
+ *
+ * @example
+ * ```ts
+ * const result = authenticateWithPassword(profile, password);
+ * if (result.success) {
+ *   const session = createSession(result.userId!);
+ * }
+ * ```
+ */
+export function createSession(userId: UserId, options?: CreateSessionOptions): AuthSession {
+  if (typeof userId !== 'string' || userId.trim().length === 0) {
+    throw new Error('User ID is required');
+  }
+  const ttl = options?.ttlSeconds ?? DEFAULT_SESSION_TTL_SECONDS;
+  if (typeof ttl !== 'number' || ttl <= 0) {
+    throw new Error('ttlSeconds must be a positive number');
+  }
+  const now = Date.now();
+  return {
+    sessionId: randomBytes(16).toString('hex'),
+    userId,
+    createdAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + ttl * 1000).toISOString(),
+  };
+}
+
+/**
+ * Returns `true` when the session has not yet expired.
+ *
+ * @example
+ * ```ts
+ * if (isSessionValid(session)) { // allow access }
+ * ```
+ */
+export function isSessionValid(session: AuthSession): boolean {
+  return new Date(session.expiresAt).getTime() > Date.now();
+}
+
+/**
+ * Invalidates a session by returning a new session whose `expiresAt` is set to
+ * the current time, effectively signing the user out.
+ * The original session is not mutated.
+ *
+ * @example
+ * ```ts
+ * const signedOut = invalidateSession(activeSession);
+ * // isSessionValid(signedOut) → false
+ * ```
+ */
+export function invalidateSession(session: AuthSession): AuthSession {
+  return { ...session, expiresAt: new Date().toISOString() };
+}
+
+/**
+ * Serializes an `AuthSession` to a JSON string suitable for safe persistence.
+ * No passwords or secrets are included.
+ *
+ * @example
+ * ```ts
+ * const raw = serializeSession(session);
+ * localStorage.setItem('session', raw);
+ * ```
+ */
+export function serializeSession(session: AuthSession): string {
+  return JSON.stringify(session);
+}
+
+/**
+ * Parses and validates a JSON string produced by `serializeSession`.
+ * Throws a descriptive error if the data is missing required fields.
+ *
+ * @example
+ * ```ts
+ * const session = deserializeSession(localStorage.getItem('session') ?? '');
+ * ```
+ */
+export function deserializeSession(raw: string): AuthSession {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('Invalid session: not valid JSON');
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    throw new Error('Invalid session: expected an object');
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  if (typeof obj['sessionId'] !== 'string' || !obj['sessionId']) {
+    throw new Error('Invalid session: missing sessionId');
+  }
+  if (typeof obj['userId'] !== 'string' || !obj['userId']) {
+    throw new Error('Invalid session: missing userId');
+  }
+  if (typeof obj['createdAt'] !== 'string' || !obj['createdAt']) {
+    throw new Error('Invalid session: missing createdAt');
+  }
+  if (typeof obj['expiresAt'] !== 'string' || !obj['expiresAt']) {
+    throw new Error('Invalid session: missing expiresAt');
+  }
+
+  return {
+    sessionId: obj['sessionId'],
+    userId: obj['userId'],
+    createdAt: obj['createdAt'],
+    expiresAt: obj['expiresAt'],
+  };
+}
+
+// ── Profile data scope ────────────────────────────────────────────────────────
+
 /**
  * Creates a `ProfileDataScope` that binds a piece of data to the given profile.
  * Attach this scope to domain objects (accounts, transactions, categories, …)
