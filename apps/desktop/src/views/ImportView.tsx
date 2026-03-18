@@ -57,6 +57,9 @@ function generateFileId(): string {
   return `file-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+/** File extensions that can be read as plain text for pipeline processing. */
+const TEXT_READABLE_EXTENSIONS = new Set(['csv']);
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -79,9 +82,17 @@ function ImportView() {
     setPhase({ kind: 'processing', fileName: file.name });
 
     try {
-      const fileContent = await readFileAsText(file);
+      // Only text-based formats (CSV) can be read directly as a string.
+      // Binary formats (XLSX, PDF) are not yet parseable in the renderer;
+      // pass an empty string so the pipeline returns a graceful "no parser
+      // found" result rather than attempting to parse garbled binary content.
+      const fileContent = TEXT_READABLE_EXTENSIONS.has(ext)
+        ? await readFileAsText(file)
+        : '';
+
       const fileId = generateFileId();
 
+      // runImportPipeline is synchronous — it returns a plain result object.
       const result = runImportPipeline({
         fileId,
         fileName: file.name,
@@ -202,7 +213,7 @@ function ImportView() {
           role="button"
           tabIndex={0}
           aria-label="Upload statement file"
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleDropZoneClick(); }}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleDropZoneClick(); } }}
         >
           <p className="empty-state-icon">{isDragging ? '📂' : '⬆'}</p>
           <h3>{isDragging ? 'Release to upload' : 'Drop your statement here'}</h3>
