@@ -48,10 +48,20 @@ export type {
 export {
   createFamilyWorkspace,
   addWorkspaceMember,
+  removeWorkspaceMember,
   isWorkspaceMember,
   getMemberRole,
   createPrivacyRule,
   resolveVisibility,
+  createWorkspaceDataScope,
+  scopeMatchesWorkspace,
+  createWorkspaceStore,
+  addWorkspaceToStore,
+  getWorkspaceById,
+  listWorkspaces,
+  getMembersForWorkspace,
+  addMemberToWorkspaceStore,
+  removeMemberFromWorkspaceStore,
 } from './workspace.js';
 export type {
   WorkspaceId,
@@ -62,6 +72,9 @@ export type {
   WorkspaceMember,
   PrivacyRule,
   CreateWorkspaceInput,
+  WorkspaceContextKind,
+  WorkspaceDataScope,
+  WorkspaceStore,
 } from './workspace.js';
 
 export {
