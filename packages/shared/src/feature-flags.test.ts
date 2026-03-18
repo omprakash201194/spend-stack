@@ -52,4 +52,14 @@ describe('createFlagResolver', () => {
     });
     expect(Object.keys(all)).toEqual(Object.keys(FEATURE_FLAGS));
   });
+
+  it('pinUnlock flag is disabled by default', () => {
+    const resolver = createFlagResolver();
+    expect(resolver.isEnabled('pinUnlock')).toBe(false);
+  });
+
+  it('pinUnlock flag can be enabled via runtime override', () => {
+    const resolver = createFlagResolver({ pinUnlock: true });
+    expect(resolver.isEnabled('pinUnlock')).toBe(true);
+  });
 });

@@ -20,6 +20,12 @@ import {
   invalidateSession,
   serializeSession,
   deserializeSession,
+  PIN_MAX_ATTEMPTS,
+  PIN_LOCKOUT_SECONDS,
+  createPinAttemptState,
+  isPinLocked,
+  recordPinSuccess,
+  recordPinFailure,
 } from './identity.js';
 
 describe('createUserProfile', () => {
@@ -565,5 +571,114 @@ describe('serializeSession / deserializeSession', () => {
     expect(() => deserializeSession('42')).toThrow('expected an object');
     expect(() => deserializeSession('"string"')).toThrow('expected an object');
     expect(() => deserializeSession('null')).toThrow('expected an object');
+  });
+});
+
+describe('PIN attempt tracking', () => {
+  it('createPinAttemptState returns zero failed attempts and no lockout', () => {
+    const state = createPinAttemptState();
+    expect(state.failedAttempts).toBe(0);
+    expect(state.lockedUntil).toBeUndefined();
+  });
+
+  it('isPinLocked returns false for a fresh state', () => {
+    const state = createPinAttemptState();
+    expect(isPinLocked(state)).toBe(false);
+  });
+
+  it('isPinLocked returns false when lockedUntil is in the past', () => {
+    const state = { failedAttempts: 5, lockedUntil: new Date(Date.now() - 1000).toISOString() };
+    expect(isPinLocked(state)).toBe(false);
+  });
+
+  it('isPinLocked returns true when lockedUntil is in the future', () => {
+    const state = { failedAttempts: 5, lockedUntil: new Date(Date.now() + 60_000).toISOString() };
+    expect(isPinLocked(state)).toBe(true);
+  });
+
+  it('recordPinSuccess resets failed attempts to zero', () => {
+    const state = { failedAttempts: 3 };
+    const next = recordPinSuccess(state);
+    expect(next.failedAttempts).toBe(0);
+    expect(next.lockedUntil).toBeUndefined();
+  });
+
+  it('recordPinSuccess clears an active lockout', () => {
+    const state = {
+      failedAttempts: 5,
+      lockedUntil: new Date(Date.now() + 60_000).toISOString(),
+    };
+    const next = recordPinSuccess(state);
+    expect(next.failedAttempts).toBe(0);
+    expect(next.lockedUntil).toBeUndefined();
+  });
+
+  it('recordPinSuccess does not mutate the original state', () => {
+    const state = { failedAttempts: 2 };
+    recordPinSuccess(state);
+    expect(state.failedAttempts).toBe(2);
+  });
+
+  it('recordPinFailure increments the failed attempt counter', () => {
+    let state = createPinAttemptState();
+    state = recordPinFailure(state);
+    expect(state.failedAttempts).toBe(1);
+    state = recordPinFailure(state);
+    expect(state.failedAttempts).toBe(2);
+  });
+
+  it('recordPinFailure does not lock before reaching PIN_MAX_ATTEMPTS', () => {
+    let state = createPinAttemptState();
+    for (let i = 0; i < PIN_MAX_ATTEMPTS - 1; i++) {
+      state = recordPinFailure(state);
+    }
+    expect(isPinLocked(state)).toBe(false);
+    expect(state.lockedUntil).toBeUndefined();
+  });
+
+  it('recordPinFailure locks after reaching PIN_MAX_ATTEMPTS', () => {
+    let state = createPinAttemptState();
+    for (let i = 0; i < PIN_MAX_ATTEMPTS; i++) {
+      state = recordPinFailure(state);
+    }
+    expect(isPinLocked(state)).toBe(true);
+    expect(state.lockedUntil).toBeTruthy();
+  });
+
+  it('lockout expires after PIN_LOCKOUT_SECONDS', () => {
+    let state = createPinAttemptState();
+    for (let i = 0; i < PIN_MAX_ATTEMPTS; i++) {
+      state = recordPinFailure(state);
+    }
+    // simulate time past lockout
+    const expired = { ...state, lockedUntil: new Date(Date.now() - 1000).toISOString() };
+    expect(isPinLocked(expired)).toBe(false);
+  });
+
+  it('lockout duration is approximately PIN_LOCKOUT_SECONDS', () => {
+    let state = createPinAttemptState();
+    for (let i = 0; i < PIN_MAX_ATTEMPTS; i++) {
+      state = recordPinFailure(state);
+    }
+    const lockedUntilMs = new Date(state.lockedUntil!).getTime();
+    const expectedMs = Date.now() + PIN_LOCKOUT_SECONDS * 1000;
+    expect(lockedUntilMs).toBeGreaterThanOrEqual(expectedMs - 1000);
+    expect(lockedUntilMs).toBeLessThanOrEqual(expectedMs + 1000);
+  });
+
+  it('recordPinFailure does not mutate the original state', () => {
+    const state = createPinAttemptState();
+    recordPinFailure(state);
+    expect(state.failedAttempts).toBe(0);
+  });
+
+  it('PIN_MAX_ATTEMPTS is a positive integer', () => {
+    expect(Number.isInteger(PIN_MAX_ATTEMPTS)).toBe(true);
+    expect(PIN_MAX_ATTEMPTS).toBeGreaterThan(0);
+  });
+
+  it('PIN_LOCKOUT_SECONDS is a positive integer', () => {
+    expect(Number.isInteger(PIN_LOCKOUT_SECONDS)).toBe(true);
+    expect(PIN_LOCKOUT_SECONDS).toBeGreaterThan(0);
   });
 });

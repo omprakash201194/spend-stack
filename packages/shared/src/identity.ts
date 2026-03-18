@@ -162,6 +162,100 @@ export function removePin(profile: UserProfile): UserProfile {
   return { ...rest, updatedAt: new Date().toISOString() };
 }
 
+// ── PIN attempt tracking ──────────────────────────────────────────────────────
+
+/** Maximum number of consecutive failed PIN attempts before lockout. */
+export const PIN_MAX_ATTEMPTS = 5;
+
+/** Duration (in seconds) of a PIN lockout after exceeding max attempts. */
+export const PIN_LOCKOUT_SECONDS = 300;
+
+/**
+ * Tracks consecutive failed PIN attempts for a single profile session.
+ * Persist this alongside the active session to enforce lockout across
+ * app restarts. Contains no secrets — safe to store in local state.
+ */
+export interface PinAttemptState {
+  /** Number of consecutive failed attempts since the last success. */
+  readonly failedAttempts: number;
+  /**
+   * ISO 8601 UTC timestamp until which PIN entry is locked.
+   * Absent when not currently locked.
+   */
+  readonly lockedUntil?: string;
+}
+
+/**
+ * Creates an initial (clean) `PinAttemptState` with no failed attempts.
+ *
+ * @example
+ * ```ts
+ * const state = createPinAttemptState();
+ * ```
+ */
+export function createPinAttemptState(): PinAttemptState {
+  return { failedAttempts: 0 };
+}
+
+/**
+ * Returns `true` when the current time is within an active lockout period.
+ *
+ * @example
+ * ```ts
+ * if (isPinLocked(state)) { // show "too many attempts" message }
+ * ```
+ */
+export function isPinLocked(state: PinAttemptState): boolean {
+  if (!state.lockedUntil) return false;
+  return new Date(state.lockedUntil).getTime() > Date.now();
+}
+
+/**
+ * Records a successful PIN verification. Resets the attempt counter and
+ * clears any lockout. Returns a new `PinAttemptState`; the original is not mutated.
+ *
+ * @example
+ * ```ts
+ * const result = verifyPin(profile, enteredPin);
+ * if (result.success) {
+ *   state = recordPinSuccess(state);
+ * }
+ * ```
+ */
+export function recordPinSuccess(state: PinAttemptState): PinAttemptState {
+  return { failedAttempts: 0 };
+}
+
+/**
+ * Records a failed PIN attempt. Increments the counter and imposes a lockout
+ * when `PIN_MAX_ATTEMPTS` is reached. Returns a new `PinAttemptState`;
+ * the original is not mutated.
+ *
+ * When locked out, the caller should prompt the user to fall back to their
+ * primary credentials via `authenticateWithPassword`.
+ *
+ * @example
+ * ```ts
+ * const result = verifyPin(profile, enteredPin);
+ * if (!result.success) {
+ *   state = recordPinFailure(state);
+ *   if (isPinLocked(state)) {
+ *     // prompt for primary credentials
+ *   }
+ * }
+ * ```
+ */
+export function recordPinFailure(state: PinAttemptState): PinAttemptState {
+  const failedAttempts = state.failedAttempts + 1;
+  if (failedAttempts >= PIN_MAX_ATTEMPTS) {
+    return {
+      failedAttempts,
+      lockedUntil: new Date(Date.now() + PIN_LOCKOUT_SECONDS * 1000).toISOString(),
+    };
+  }
+  return { failedAttempts };
+}
+
 /**
  * Returns a safe, public view of a profile with all hashes and salts stripped.
  */
