@@ -5,7 +5,7 @@ import type { FileType } from '@spendstack/parser-engine';
 const SUPPORTED_BANKS = ['ICICI Bank', 'Bank of Baroda', 'Kotak Bank'];
 const SUPPORTED_FORMATS = ['PDF', 'CSV', 'XLSX'];
 
-/** Maps a file extension or MIME type to a FileType understood by the pipeline. */
+/** Maps a file extension to a FileType understood by the pipeline. */
 const EXTENSION_TO_FILE_TYPE: Record<string, FileType> = {
   csv: 'csv',
   xlsx: 'xlsx',
@@ -54,7 +54,7 @@ function readFileAsText(file: File): Promise<string> {
 }
 
 function generateFileId(): string {
-  return `file-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  return `file-${crypto.randomUUID()}`;
 }
 
 /** File extensions that can be read as plain text for pipeline processing. */
@@ -67,6 +67,13 @@ const TEXT_READABLE_EXTENSIONS = new Set(['csv']);
 function ImportView() {
   const [phase, setPhase] = useState<ImportPhase>({ kind: 'idle' });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  /**
+   * Track how deeply nested inside the drop zone the dragged item is.
+   * dragenter fires for every child element entered; dragleave fires for
+   * every child left — so without this counter the zone would flicker back
+   * to idle whenever the pointer moves over an inner element.
+   */
+  const dragDepth = useRef(0);
 
   // ── File processing ──────────────────────────────────────────────────────
 
@@ -101,6 +108,17 @@ function ImportView() {
         accountId: 'default',
         uploadedByUserId: 'local-user',
       });
+
+      // Surface a pipeline-level failure (e.g. no parser found for this format)
+      // as an explicit error rather than showing the success panel with zeros.
+      if (result.status === 'failed') {
+        const message =
+          result.parserWarnings.length > 0
+            ? result.parserWarnings.join(' ')
+            : 'The file could not be parsed. It may be unsupported or corrupted.';
+        setPhase({ kind: 'error', fileName: file.name, message });
+        return;
+      }
 
       setPhase({
         kind: 'done',
@@ -141,7 +159,10 @@ function ImportView() {
   function handleDragEnter(e: React.DragEvent) {
     e.preventDefault();
     e.stopPropagation();
-    if (phase.kind !== 'processing') {
+    // Only highlight when the dragged item contains files (not text/links).
+    if (!e.dataTransfer.types.includes('Files')) return;
+    dragDepth.current += 1;
+    if (phase.kind !== 'processing' && dragDepth.current === 1) {
       setPhase({ kind: 'dragging' });
     }
   }
@@ -154,7 +175,9 @@ function ImportView() {
   function handleDragLeave(e: React.DragEvent) {
     e.preventDefault();
     e.stopPropagation();
-    if (phase.kind === 'dragging') {
+    dragDepth.current -= 1;
+    // Only reset when the cursor fully exits the drop zone.
+    if (dragDepth.current === 0 && phase.kind === 'dragging') {
       setPhase({ kind: 'idle' });
     }
   }
@@ -162,6 +185,7 @@ function ImportView() {
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     e.stopPropagation();
+    dragDepth.current = 0;
     if (phase.kind === 'processing') return;
 
     const file = e.dataTransfer.files[0];
@@ -175,6 +199,7 @@ function ImportView() {
   // ── Reset ────────────────────────────────────────────────────────────────
 
   function handleReset() {
+    dragDepth.current = 0;
     setPhase({ kind: 'idle' });
   }
 
