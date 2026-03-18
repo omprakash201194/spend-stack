@@ -11,10 +11,13 @@ const DEFAULT_FLAGS = Object.fromEntries(
 
 /**
  * Fetches the resolved feature flags from the main process once on mount.
+ * `flags` holds the current snapshot; `isReady` is false until the IPC response
+ * (or fallback) has been applied — always check `isReady` before gating UI.
  *
  * @example
  * ```tsx
  * const { flags, isReady } = useFeatureFlags();
+ * if (!isReady) return null;
  * if (flags.aiCategorisation) {
  *   // render AI panel
  * }
@@ -35,7 +38,16 @@ export function useFeatureFlags(): { flags: FlagMap; isReady: boolean } {
     api
       .getFlags()
       .then((resolved) => {
-        setFlagState(resolved as FlagMap);
+        // Merge IPC payload into DEFAULT_FLAGS so every known key is always
+        // present as a boolean, even if the payload is missing some keys or
+        // contains unexpected ones from a version mismatch.
+        const normalized: FlagMap = { ...DEFAULT_FLAGS };
+        for (const key of Object.keys(DEFAULT_FLAGS) as FeatureFlagName[]) {
+          if (key in resolved && typeof resolved[key] === 'boolean') {
+            normalized[key] = resolved[key] as boolean;
+          }
+        }
+        setFlagState(normalized);
         setIsReady(true);
       })
       .catch((err: unknown) => {
