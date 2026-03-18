@@ -128,7 +128,7 @@ export function removeWorkspaceMember(
   if (!target) {
     throw new Error(`User ${userId} is not a member of workspace ${workspace.id}`);
   }
-  if (target.role === 'owner') {
+  if (userId === workspace.ownerId || target.role === 'owner') {
     throw new Error('Cannot remove the workspace owner');
   }
   return members.filter((m) => m.userId !== userId);
@@ -187,17 +187,13 @@ export function createPrivacyRule(
  * per-workspace data isolation and drive visibility logic.
  *
  * - `'personal'`  — data belongs to one user outside any shared workspace
- * - `'workspace'` — data is associated with a family workspace (`workspaceId` is set)
+ * - `'workspace'` — data is associated with a family workspace (`workspaceId` is required)
  */
 export type WorkspaceContextKind = 'personal' | 'workspace';
 
-export interface WorkspaceDataScope {
-  readonly kind: WorkspaceContextKind;
-  /** Present when `kind === 'workspace'`. */
-  readonly workspaceId?: WorkspaceId;
-  /** The user who owns the scoped data. */
-  readonly ownerId: UserId;
-}
+export type WorkspaceDataScope =
+  | { readonly kind: 'personal'; readonly ownerId: UserId }
+  | { readonly kind: 'workspace'; readonly ownerId: UserId; readonly workspaceId: WorkspaceId };
 
 /**
  * Creates a `WorkspaceDataScope` for personal (non-workspace) data.
@@ -228,16 +224,19 @@ export function createWorkspaceDataScope(
   ownerId: UserId,
   workspaceId?: WorkspaceId,
 ): WorkspaceDataScope {
-  if (!ownerId) {
+  if (typeof ownerId !== 'string' || ownerId.trim().length === 0) {
     throw new Error('Owner ID is required');
   }
   if (kind === 'workspace') {
-    if (!workspaceId) {
+    if (typeof workspaceId !== 'string' || workspaceId.trim().length === 0) {
       throw new Error('Workspace ID is required for workspace-scoped data');
     }
-    return { kind, ownerId, workspaceId };
+    return { kind, ownerId: ownerId.trim(), workspaceId: workspaceId.trim() };
   }
-  return { kind, ownerId };
+  if (kind === 'personal') {
+    return { kind, ownerId: ownerId.trim() };
+  }
+  throw new Error(`Unknown workspace context kind: ${String(kind)}`);
 }
 
 /**
@@ -300,7 +299,8 @@ export function createWorkspaceStore(): WorkspaceStore {
 /**
  * Adds a workspace (and its initial owner membership) to the store.
  * Returns a new `WorkspaceStore`; the original is not mutated.
- * Throws if a workspace with the same ID already exists.
+ * Throws if a workspace with the same ID already exists, or if `ownerMembership`
+ * does not match the workspace (wrong workspaceId, userId, or role).
  */
 export function addWorkspaceToStore(
   store: WorkspaceStore,
@@ -309,6 +309,15 @@ export function addWorkspaceToStore(
 ): WorkspaceStore {
   if (Object.hasOwn(store.workspaces, workspace.id)) {
     throw new Error(`Workspace with ID ${workspace.id} already exists`);
+  }
+  if (ownerMembership.workspaceId !== workspace.id) {
+    throw new Error('ownerMembership.workspaceId must match the workspace ID');
+  }
+  if (ownerMembership.userId !== workspace.ownerId) {
+    throw new Error('ownerMembership.userId must match the workspace ownerId');
+  }
+  if (ownerMembership.role !== 'owner') {
+    throw new Error('ownerMembership.role must be "owner"');
   }
   const workspaces = Object.assign(
     Object.create(null) as Record<WorkspaceId, FamilyWorkspace>,
@@ -358,7 +367,8 @@ export function getMembersForWorkspace(
 /**
  * Adds a member to the membership list for the specified workspace.
  * Returns a new `WorkspaceStore`; the original is not mutated.
- * Throws if the workspace is not found or if the user is already a member.
+ * Throws if the workspace is not found, the user is already a member, or
+ * `member.workspaceId` does not match the target workspace.
  */
 export function addMemberToWorkspaceStore(
   store: WorkspaceStore,
@@ -367,6 +377,11 @@ export function addMemberToWorkspaceStore(
 ): WorkspaceStore {
   if (!Object.hasOwn(store.workspaces, workspaceId)) {
     throw new Error(`Workspace with ID ${workspaceId} not found`);
+  }
+  if (member.workspaceId !== workspaceId) {
+    throw new Error(
+      `member.workspaceId (${member.workspaceId}) does not match target workspace (${workspaceId})`,
+    );
   }
   const existing = store.memberships[workspaceId] ?? [];
   if (existing.some((m) => m.userId === member.userId)) {

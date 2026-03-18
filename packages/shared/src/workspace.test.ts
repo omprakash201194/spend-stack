@@ -17,6 +17,7 @@ import {
   addMemberToWorkspaceStore,
   removeMemberFromWorkspaceStore,
 } from './workspace.js';
+import type { WorkspaceMember } from './workspace.js';
 
 describe('createFamilyWorkspace', () => {
   it('creates a workspace with the correct name and owner', () => {
@@ -231,6 +232,34 @@ describe('removeWorkspaceMember', () => {
       'Cannot remove the workspace owner',
     );
   });
+
+  it('throws when userId is workspace.ownerId even if membership role is inconsistent', () => {
+    const { workspace } = makeSetup();
+    // Construct a membership list where the owner's userId has a non-owner role
+    const inconsistentMembership: WorkspaceMember = {
+      workspaceId: workspace.id,
+      userId: 'u-owner',
+      role: 'member',
+      joinedAt: new Date().toISOString(),
+    };
+    expect(() => removeWorkspaceMember(workspace, [inconsistentMembership], 'u-owner')).toThrow(
+      'Cannot remove the workspace owner',
+    );
+  });
+
+  it('throws when membership role is owner even if userId does not match workspace.ownerId', () => {
+    // A membership with role 'owner' for a different userId is still blocked by the role guard
+    const { workspace } = makeSetup();
+    const ownerRoleMembership: WorkspaceMember = {
+      workspaceId: workspace.id,
+      userId: 'u-other',
+      role: 'owner',
+      joinedAt: new Date().toISOString(),
+    };
+    expect(() => removeWorkspaceMember(workspace, [ownerRoleMembership], 'u-other')).toThrow(
+      'Cannot remove the workspace owner',
+    );
+  });
 });
 
 describe('WorkspaceDataScope', () => {
@@ -252,10 +281,35 @@ describe('WorkspaceDataScope', () => {
     expect(() => createWorkspaceDataScope('personal', '')).toThrow('Owner ID is required');
   });
 
+  it('createWorkspaceDataScope: throws when ownerId is whitespace-only', () => {
+    expect(() => createWorkspaceDataScope('personal', '   ')).toThrow('Owner ID is required');
+  });
+
   it('createWorkspaceDataScope: throws when workspaceId missing for workspace kind', () => {
     expect(() => createWorkspaceDataScope('workspace', 'u-1', undefined as unknown as string)).toThrow(
       'Workspace ID is required',
     );
+  });
+
+  it('createWorkspaceDataScope: throws when workspaceId is whitespace-only for workspace kind', () => {
+    expect(() => createWorkspaceDataScope('workspace', 'u-1', '   ')).toThrow(
+      'Workspace ID is required',
+    );
+  });
+
+  it('createWorkspaceDataScope: trims ownerId and workspaceId', () => {
+    const scope = createWorkspaceDataScope('workspace', '  u-1  ', '  ws-1  ');
+    expect(scope.ownerId).toBe('u-1');
+    expect(scope.kind).toBe('workspace');
+    if (scope.kind === 'workspace') {
+      expect(scope.workspaceId).toBe('ws-1');
+    }
+  });
+
+  it('createWorkspaceDataScope: personal scope has no workspaceId on type', () => {
+    const scope = createWorkspaceDataScope('personal', 'u-1');
+    // The discriminated union means 'workspaceId' is not present on the personal variant
+    expect('workspaceId' in scope).toBe(false);
   });
 
   it('scopeMatchesWorkspace: personal scope matches personal check', () => {
@@ -308,6 +362,48 @@ describe('WorkspaceStore', () => {
     expect(() => addWorkspaceToStore(store, workspace, ownerMembership)).toThrow('already exists');
   });
 
+  it('addWorkspaceToStore: throws when ownerMembership.workspaceId does not match', () => {
+    const base = createWorkspaceStore();
+    const { workspace } = createFamilyWorkspace({ name: 'WS', ownerId: 'u-1' });
+    const wrongMembership: WorkspaceMember = {
+      workspaceId: 'wrong-ws-id',
+      userId: 'u-1',
+      role: 'owner',
+      joinedAt: new Date().toISOString(),
+    };
+    expect(() => addWorkspaceToStore(base, workspace, wrongMembership)).toThrow(
+      'ownerMembership.workspaceId must match the workspace ID',
+    );
+  });
+
+  it('addWorkspaceToStore: throws when ownerMembership.userId does not match workspace.ownerId', () => {
+    const base = createWorkspaceStore();
+    const { workspace } = createFamilyWorkspace({ name: 'WS', ownerId: 'u-1' });
+    const wrongMembership: WorkspaceMember = {
+      workspaceId: workspace.id,
+      userId: 'u-other',
+      role: 'owner',
+      joinedAt: new Date().toISOString(),
+    };
+    expect(() => addWorkspaceToStore(base, workspace, wrongMembership)).toThrow(
+      'ownerMembership.userId must match the workspace ownerId',
+    );
+  });
+
+  it('addWorkspaceToStore: throws when ownerMembership.role is not "owner"', () => {
+    const base = createWorkspaceStore();
+    const { workspace } = createFamilyWorkspace({ name: 'WS', ownerId: 'u-1' });
+    const wrongMembership: WorkspaceMember = {
+      workspaceId: workspace.id,
+      userId: 'u-1',
+      role: 'member',
+      joinedAt: new Date().toISOString(),
+    };
+    expect(() => addWorkspaceToStore(base, workspace, wrongMembership)).toThrow(
+      'ownerMembership.role must be "owner"',
+    );
+  });
+
   it('addWorkspaceToStore: does not mutate the original store', () => {
     const base = createWorkspaceStore();
     const { workspace, ownerMembership } = createFamilyWorkspace({ name: 'WS', ownerId: 'u-1' });
@@ -346,6 +442,15 @@ describe('WorkspaceStore', () => {
     const { workspace: other } = createFamilyWorkspace({ name: 'Other', ownerId: 'u-x' });
     const m = addWorkspaceMember(other, 'u-y');
     expect(() => addMemberToWorkspaceStore(store, 'no-such-ws', m)).toThrow('not found');
+  });
+
+  it('addMemberToWorkspaceStore: throws when member.workspaceId does not match target workspace', () => {
+    const { store, workspace } = makePopulatedStore();
+    const { workspace: other } = createFamilyWorkspace({ name: 'Other', ownerId: 'u-x' });
+    const wrongMember = addWorkspaceMember(other, 'u-new'); // workspaceId points to `other`
+    expect(() => addMemberToWorkspaceStore(store, workspace.id, wrongMember)).toThrow(
+      'does not match target workspace',
+    );
   });
 
   it('addMemberToWorkspaceStore: throws on duplicate user', () => {
