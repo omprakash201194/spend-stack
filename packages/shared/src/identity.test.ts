@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   createUserProfile,
   authenticateWithPassword,
@@ -575,6 +575,10 @@ describe('serializeSession / deserializeSession', () => {
 });
 
 describe('PIN attempt tracking', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('createPinAttemptState returns zero failed attempts and no lockout', () => {
     const state = createPinAttemptState();
     expect(state.failedAttempts).toBe(0);
@@ -655,15 +659,57 @@ describe('PIN attempt tracking', () => {
     expect(isPinLocked(expired)).toBe(false);
   });
 
-  it('lockout duration is approximately PIN_LOCKOUT_SECONDS', () => {
+  it('lockout duration is exactly PIN_LOCKOUT_SECONDS (fake timers)', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
     let state = createPinAttemptState();
     for (let i = 0; i < PIN_MAX_ATTEMPTS; i++) {
       state = recordPinFailure(state);
     }
-    const lockedUntilMs = new Date(state.lockedUntil!).getTime();
-    const expectedMs = Date.now() + PIN_LOCKOUT_SECONDS * 1000;
-    expect(lockedUntilMs).toBeGreaterThanOrEqual(expectedMs - 1000);
-    expect(lockedUntilMs).toBeLessThanOrEqual(expectedMs + 1000);
+
+    const expectedLockedUntil = new Date(
+      Date.now() + PIN_LOCKOUT_SECONDS * 1000,
+    ).toISOString();
+    expect(state.lockedUntil).toBe(expectedLockedUntil);
+  });
+
+  it('recordPinFailure does not extend lockout when already locked (fake timers)', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+    let state = createPinAttemptState();
+    for (let i = 0; i < PIN_MAX_ATTEMPTS; i++) {
+      state = recordPinFailure(state);
+    }
+    const originalLockedUntil = state.lockedUntil;
+
+    // Advance time but stay inside the lockout window, then fail again.
+    vi.advanceTimersByTime(60_000);
+    const stateAfter = recordPinFailure(state);
+
+    // The lockout timestamp must not be extended.
+    expect(stateAfter.lockedUntil).toBe(originalLockedUntil);
+  });
+
+  it('recordPinFailure resets counter after expired lockout (fake timers)', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+    let state = createPinAttemptState();
+    for (let i = 0; i < PIN_MAX_ATTEMPTS; i++) {
+      state = recordPinFailure(state);
+    }
+    expect(isPinLocked(state)).toBe(true);
+
+    // Advance past the lockout window.
+    vi.advanceTimersByTime(PIN_LOCKOUT_SECONDS * 1000 + 1);
+    expect(isPinLocked(state)).toBe(false);
+
+    // First failure after lockout expires should start a fresh counter from 1.
+    const stateAfter = recordPinFailure(state);
+    expect(stateAfter.failedAttempts).toBe(1);
+    expect(stateAfter.lockedUntil).toBeUndefined();
   });
 
   it('recordPinFailure does not mutate the original state', () => {

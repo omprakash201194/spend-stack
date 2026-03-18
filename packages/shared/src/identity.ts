@@ -222,7 +222,7 @@ export function isPinLocked(state: PinAttemptState): boolean {
  * }
  * ```
  */
-export function recordPinSuccess(state: PinAttemptState): PinAttemptState {
+export function recordPinSuccess(_state: PinAttemptState): PinAttemptState {
   return { failedAttempts: 0 };
 }
 
@@ -246,7 +246,15 @@ export function recordPinSuccess(state: PinAttemptState): PinAttemptState {
  * ```
  */
 export function recordPinFailure(state: PinAttemptState): PinAttemptState {
-  const failedAttempts = state.failedAttempts + 1;
+  // If there is an active lockout, do not extend it — keep the original window.
+  if (state.lockedUntil && new Date(state.lockedUntil).getTime() > Date.now()) {
+    return state;
+  }
+
+  // If an existing lockout has now expired, reset the counter before incrementing.
+  const baseAttempts = state.lockedUntil ? 0 : state.failedAttempts;
+  const failedAttempts = baseAttempts + 1;
+
   if (failedAttempts >= PIN_MAX_ATTEMPTS) {
     return {
       failedAttempts,
