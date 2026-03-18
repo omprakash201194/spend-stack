@@ -207,7 +207,7 @@ export interface ProfileDataScope {
  * ```
  */
 export function createProfileStore(): ProfileStore {
-  return { profiles: {}, activeProfileId: null };
+  return { profiles: Object.create(null) as Record<UserId, UserProfile>, activeProfileId: null };
 }
 
 /**
@@ -216,13 +216,13 @@ export function createProfileStore(): ProfileStore {
  * Throws if a profile with the same ID already exists.
  */
 export function addProfileToStore(store: ProfileStore, profile: UserProfile): ProfileStore {
-  if (store.profiles[profile.id] !== undefined) {
+  if (Object.hasOwn(store.profiles, profile.id)) {
     throw new Error(`Profile with ID ${profile.id} already exists`);
   }
-  return {
-    ...store,
-    profiles: { ...store.profiles, [profile.id]: profile },
-  };
+  const profiles = Object.assign(Object.create(null) as Record<UserId, UserProfile>, store.profiles, {
+    [profile.id]: profile,
+  });
+  return { ...store, profiles };
 }
 
 /**
@@ -232,12 +232,14 @@ export function addProfileToStore(store: ProfileStore, profile: UserProfile): Pr
  * Throws if the profile does not exist in the store.
  */
 export function removeProfileFromStore(store: ProfileStore, userId: UserId): ProfileStore {
-  if (store.profiles[userId] === undefined) {
+  if (!Object.hasOwn(store.profiles, userId)) {
     throw new Error(`Profile with ID ${userId} not found`);
   }
-  const { [userId]: _removed, ...remaining } = store.profiles;
+  const profiles = Object.assign(Object.create(null) as Record<UserId, UserProfile>, store.profiles);
+  delete profiles[userId];
   return {
-    profiles: remaining,
+    ...store,
+    profiles,
     activeProfileId: store.activeProfileId === userId ? null : store.activeProfileId,
   };
 }
@@ -254,7 +256,7 @@ export function listProfiles(store: ProfileStore): PublicUserProfile[] {
  * Returns the full `UserProfile` for the given ID, or `undefined` if not found.
  */
 export function getProfileById(store: ProfileStore, userId: UserId): UserProfile | undefined {
-  return store.profiles[userId];
+  return Object.hasOwn(store.profiles, userId) ? store.profiles[userId] : undefined;
 }
 
 /**
@@ -268,7 +270,7 @@ export function getProfileById(store: ProfileStore, userId: UserId): UserProfile
  * ```
  */
 export function switchActiveProfile(store: ProfileStore, userId: UserId): ProfileStore {
-  if (store.profiles[userId] === undefined) {
+  if (!Object.hasOwn(store.profiles, userId)) {
     throw new Error(`Profile with ID ${userId} not found`);
   }
   return { ...store, activeProfileId: userId };
@@ -286,8 +288,9 @@ export function switchActiveProfile(store: ProfileStore, userId: UserId): Profil
  */
 export function getActiveProfile(store: ProfileStore): PublicUserProfile | undefined {
   if (store.activeProfileId === null) return undefined;
-  const profile = store.profiles[store.activeProfileId];
-  return profile !== undefined ? toPublicProfile(profile) : undefined;
+  return Object.hasOwn(store.profiles, store.activeProfileId)
+    ? toPublicProfile(store.profiles[store.activeProfileId])
+    : undefined;
 }
 
 /**
@@ -302,10 +305,10 @@ export function getActiveProfile(store: ProfileStore): PublicUserProfile | undef
  * ```
  */
 export function createProfileDataScope(profileId: UserId): ProfileDataScope {
-  if (profileId === '' || profileId === null || profileId === undefined) {
+  if (typeof profileId !== 'string' || profileId.trim().length === 0) {
     throw new Error('Profile ID is required');
   }
-  return { profileId };
+  return { profileId: profileId.trim() };
 }
 
 /**

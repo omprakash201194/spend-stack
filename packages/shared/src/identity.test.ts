@@ -366,8 +366,24 @@ describe('createProfileDataScope / scopeMatchesProfile', () => {
     expect(scope.profileId).toBe('user-1');
   });
 
+  it('trims whitespace from the profile ID', () => {
+    const scope = createProfileDataScope('  user-1  ');
+    expect(scope.profileId).toBe('user-1');
+  });
+
   it('throws when profile ID is empty', () => {
     expect(() => createProfileDataScope('')).toThrow('Profile ID is required');
+  });
+
+  it('throws when profile ID is whitespace-only', () => {
+    expect(() => createProfileDataScope('   ')).toThrow('Profile ID is required');
+  });
+
+  it('throws when profile ID is not a string', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(() => createProfileDataScope(null as any)).toThrow('Profile ID is required');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(() => createProfileDataScope(undefined as any)).toThrow('Profile ID is required');
   });
 
   it('returns true when scope matches the profile ID', () => {
@@ -378,6 +394,19 @@ describe('createProfileDataScope / scopeMatchesProfile', () => {
   it('returns false when scope does not match the profile ID', () => {
     const scope = createProfileDataScope('user-1');
     expect(scopeMatchesProfile(scope, 'user-2')).toBe(false);
+  });
+
+  it('is safe against prototype-poisoning IDs like __proto__', () => {
+    const store = createProfileStore();
+    // Ensure that a profile whose id matches a prototype property can be added and
+    // retrieved without triggering prototype-chain confusion.
+    const profile = createUserProfile({ name: 'Mallory', email: 'm@evil.com', password: 'pw' });
+    const poisonedProfile = { ...profile, id: '__proto__' };
+    const s1 = addProfileToStore(store, poisonedProfile);
+    expect(getProfileById(s1, '__proto__')).toEqual(poisonedProfile);
+    // A subsequent store should not have Object.prototype polluted
+    const freshStore = createProfileStore();
+    expect(getProfileById(freshStore, '__proto__')).toBeUndefined();
   });
 
   it('can be used to filter domain objects by active profile', () => {
