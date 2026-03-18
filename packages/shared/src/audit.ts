@@ -26,6 +26,7 @@ export type AuditEventType =
   | 'user.created'
   | 'user.authenticated'
   | 'user.authentication_failed'
+  | 'user.signed_out'
   | 'user.pin_set'
   | 'user.pin_removed'
   // Workspace events

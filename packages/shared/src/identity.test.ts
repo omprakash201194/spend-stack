@@ -15,6 +15,11 @@ import {
   getActiveProfile,
   createProfileDataScope,
   scopeMatchesProfile,
+  createSession,
+  isSessionValid,
+  invalidateSession,
+  serializeSession,
+  deserializeSession,
 } from './identity.js';
 
 describe('createUserProfile', () => {
@@ -422,5 +427,143 @@ describe('createProfileDataScope / scopeMatchesProfile', () => {
     const aliceItems = items.filter((i) => scopeMatchesProfile(i.scope, p1.id));
     expect(aliceItems).toHaveLength(2);
     expect(aliceItems.every((i) => i.name.startsWith('Alice'))).toBe(true);
+  });
+});
+
+describe('createSession', () => {
+  it('creates a session with a unique sessionId', () => {
+    const s1 = createSession('user-1');
+    const s2 = createSession('user-1');
+    expect(s1.sessionId).toBeTruthy();
+    expect(s2.sessionId).toBeTruthy();
+    expect(s1.sessionId).not.toBe(s2.sessionId);
+  });
+
+  it('binds the session to the given user ID', () => {
+    const session = createSession('user-42');
+    expect(session.userId).toBe('user-42');
+  });
+
+  it('sets createdAt and expiresAt as ISO timestamps', () => {
+    const session = createSession('user-1');
+    expect(session.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(session.expiresAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('defaults to a 30-day expiry', () => {
+    const before = Date.now();
+    const session = createSession('user-1');
+    const after = Date.now();
+    const expiresMs = new Date(session.expiresAt).getTime();
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+    expect(expiresMs).toBeGreaterThanOrEqual(before + thirtyDaysMs);
+    expect(expiresMs).toBeLessThanOrEqual(after + thirtyDaysMs);
+  });
+
+  it('respects a custom ttlSeconds option', () => {
+    const before = Date.now();
+    const session = createSession('user-1', { ttlSeconds: 3600 });
+    const after = Date.now();
+    const expiresMs = new Date(session.expiresAt).getTime();
+    expect(expiresMs).toBeGreaterThanOrEqual(before + 3600 * 1000);
+    expect(expiresMs).toBeLessThanOrEqual(after + 3600 * 1000);
+  });
+
+  it('throws when userId is empty', () => {
+    expect(() => createSession('')).toThrow('User ID is required');
+  });
+
+  it('throws when userId is whitespace-only', () => {
+    expect(() => createSession('   ')).toThrow('User ID is required');
+  });
+
+  it('throws when ttlSeconds is zero or negative', () => {
+    expect(() => createSession('user-1', { ttlSeconds: 0 })).toThrow(
+      'ttlSeconds must be a positive number',
+    );
+    expect(() => createSession('user-1', { ttlSeconds: -60 })).toThrow(
+      'ttlSeconds must be a positive number',
+    );
+  });
+});
+
+describe('isSessionValid', () => {
+  it('returns true for a freshly created session', () => {
+    const session = createSession('user-1');
+    expect(isSessionValid(session)).toBe(true);
+  });
+
+  it('returns false for an already-expired session', () => {
+    const session = createSession('user-1', { ttlSeconds: 1 });
+    const expired = { ...session, expiresAt: new Date(Date.now() - 1000).toISOString() };
+    expect(isSessionValid(expired)).toBe(false);
+  });
+});
+
+describe('invalidateSession', () => {
+  it('returns a session that is no longer valid', () => {
+    const session = createSession('user-1');
+    const signedOut = invalidateSession(session);
+    expect(isSessionValid(signedOut)).toBe(false);
+  });
+
+  it('does not mutate the original session', () => {
+    const session = createSession('user-1');
+    invalidateSession(session);
+    expect(isSessionValid(session)).toBe(true);
+  });
+
+  it('preserves the original sessionId and userId', () => {
+    const session = createSession('user-99');
+    const signedOut = invalidateSession(session);
+    expect(signedOut.sessionId).toBe(session.sessionId);
+    expect(signedOut.userId).toBe(session.userId);
+  });
+});
+
+describe('serializeSession / deserializeSession', () => {
+  it('round-trips a session through JSON', () => {
+    const session = createSession('user-1');
+    const restored = deserializeSession(serializeSession(session));
+    expect(restored.sessionId).toBe(session.sessionId);
+    expect(restored.userId).toBe(session.userId);
+    expect(restored.createdAt).toBe(session.createdAt);
+    expect(restored.expiresAt).toBe(session.expiresAt);
+  });
+
+  it('preserves session validity after round-trip', () => {
+    const session = createSession('user-1');
+    const restored = deserializeSession(serializeSession(session));
+    expect(isSessionValid(restored)).toBe(true);
+  });
+
+  it('throws on non-JSON input', () => {
+    expect(() => deserializeSession('not-json')).toThrow('not valid JSON');
+  });
+
+  it('throws when sessionId is missing', () => {
+    const bad = JSON.stringify({ userId: 'u1', createdAt: 'now', expiresAt: 'later' });
+    expect(() => deserializeSession(bad)).toThrow('missing sessionId');
+  });
+
+  it('throws when userId is missing', () => {
+    const bad = JSON.stringify({ sessionId: 'sid', createdAt: 'now', expiresAt: 'later' });
+    expect(() => deserializeSession(bad)).toThrow('missing userId');
+  });
+
+  it('throws when createdAt is missing', () => {
+    const bad = JSON.stringify({ sessionId: 'sid', userId: 'u1', expiresAt: 'later' });
+    expect(() => deserializeSession(bad)).toThrow('missing createdAt');
+  });
+
+  it('throws when expiresAt is missing', () => {
+    const bad = JSON.stringify({ sessionId: 'sid', userId: 'u1', createdAt: 'now' });
+    expect(() => deserializeSession(bad)).toThrow('missing expiresAt');
+  });
+
+  it('throws when input is a JSON primitive', () => {
+    expect(() => deserializeSession('42')).toThrow('expected an object');
+    expect(() => deserializeSession('"string"')).toThrow('expected an object');
+    expect(() => deserializeSession('null')).toThrow('expected an object');
   });
 });

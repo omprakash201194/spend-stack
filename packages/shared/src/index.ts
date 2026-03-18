@@ -20,6 +20,11 @@ export {
   getActiveProfile,
   createProfileDataScope,
   scopeMatchesProfile,
+  createSession,
+  isSessionValid,
+  invalidateSession,
+  serializeSession,
+  deserializeSession,
 } from './identity.js';
 export type {
   UserId,
@@ -29,6 +34,8 @@ export type {
   AuthResult,
   ProfileStore,
   ProfileDataScope,
+  AuthSession,
+  CreateSessionOptions,
 } from './identity.js';
 
 export {
