@@ -110,6 +110,31 @@ export function addWorkspaceMember(
 }
 
 /**
+ * Removes a member from the membership list by user ID.
+ * Returns a new array; the original is not mutated.
+ * Throws if the user is not a member or if attempting to remove the workspace owner.
+ *
+ * @example
+ * ```ts
+ * const updated = removeWorkspaceMember(workspace, members, 'u-2');
+ * ```
+ */
+export function removeWorkspaceMember(
+  workspace: FamilyWorkspace,
+  members: WorkspaceMember[],
+  userId: UserId,
+): WorkspaceMember[] {
+  const target = members.find((m) => m.userId === userId);
+  if (!target) {
+    throw new Error(`User ${userId} is not a member of workspace ${workspace.id}`);
+  }
+  if (target.role === 'owner') {
+    throw new Error('Cannot remove the workspace owner');
+  }
+  return members.filter((m) => m.userId !== userId);
+}
+
+/**
  * Returns `true` if the given user is present in the membership list.
  */
 export function isWorkspaceMember(members: WorkspaceMember[], userId: UserId): boolean {
@@ -150,6 +175,234 @@ export function createPrivacyRule(
     scope,
     createdAt: new Date().toISOString(),
   };
+}
+
+// ── Workspace data scope ──────────────────────────────────────────────────────
+
+/**
+ * Scopes a piece of data to a specific workspace, distinguishing personal
+ * (single-user) context from shared family-workspace context.
+ *
+ * Attach this to domain objects (accounts, transactions, …) to enforce
+ * per-workspace data isolation and drive visibility logic.
+ *
+ * - `'personal'`  — data belongs to one user outside any shared workspace
+ * - `'workspace'` — data is associated with a family workspace (`workspaceId` is set)
+ */
+export type WorkspaceContextKind = 'personal' | 'workspace';
+
+export interface WorkspaceDataScope {
+  readonly kind: WorkspaceContextKind;
+  /** Present when `kind === 'workspace'`. */
+  readonly workspaceId?: WorkspaceId;
+  /** The user who owns the scoped data. */
+  readonly ownerId: UserId;
+}
+
+/**
+ * Creates a `WorkspaceDataScope` for personal (non-workspace) data.
+ *
+ * @example
+ * ```ts
+ * const scope = createWorkspaceDataScope('personal', 'u-1');
+ * ```
+ */
+export function createWorkspaceDataScope(kind: 'personal', ownerId: UserId): WorkspaceDataScope;
+
+/**
+ * Creates a `WorkspaceDataScope` for data that belongs to a family workspace.
+ *
+ * @example
+ * ```ts
+ * const scope = createWorkspaceDataScope('workspace', 'u-1', workspace.id);
+ * ```
+ */
+export function createWorkspaceDataScope(
+  kind: 'workspace',
+  ownerId: UserId,
+  workspaceId: WorkspaceId,
+): WorkspaceDataScope;
+
+export function createWorkspaceDataScope(
+  kind: WorkspaceContextKind,
+  ownerId: UserId,
+  workspaceId?: WorkspaceId,
+): WorkspaceDataScope {
+  if (!ownerId) {
+    throw new Error('Owner ID is required');
+  }
+  if (kind === 'workspace') {
+    if (!workspaceId) {
+      throw new Error('Workspace ID is required for workspace-scoped data');
+    }
+    return { kind, ownerId, workspaceId };
+  }
+  return { kind, ownerId };
+}
+
+/**
+ * Returns `true` when the given scope matches the specified workspace or the personal context.
+ *
+ * Pass `workspaceId` to test for a specific workspace; omit it to test for the personal scope.
+ *
+ * @example
+ * ```ts
+ * // personal check
+ * scopeMatchesWorkspace(scope, 'u-1')               // true when kind === 'personal' && ownerId === 'u-1'
+ * // workspace check
+ * scopeMatchesWorkspace(scope, 'u-1', workspace.id) // true when kind === 'workspace' && workspaceId matches
+ * ```
+ */
+export function scopeMatchesWorkspace(
+  scope: WorkspaceDataScope,
+  ownerId: UserId,
+  workspaceId?: WorkspaceId,
+): boolean {
+  if (scope.ownerId !== ownerId) return false;
+  if (workspaceId === undefined) {
+    return scope.kind === 'personal';
+  }
+  return scope.kind === 'workspace' && scope.workspaceId === workspaceId;
+}
+
+// ── Workspace store ───────────────────────────────────────────────────────────
+
+/**
+ * An in-memory store that holds all workspaces and their membership lists.
+ * Designed for use in the local application layer; persist to SQLite via the
+ * database package for durability.
+ */
+export interface WorkspaceStore {
+  /** All workspaces, keyed by workspace ID. */
+  readonly workspaces: Readonly<Record<WorkspaceId, FamilyWorkspace>>;
+  /**
+   * Membership lists, keyed by workspace ID.
+   * Each entry is a read-only snapshot of the workspace's current member list.
+   */
+  readonly memberships: Readonly<Record<WorkspaceId, readonly WorkspaceMember[]>>;
+}
+
+/**
+ * Creates an empty `WorkspaceStore` with no workspaces.
+ *
+ * @example
+ * ```ts
+ * const store = createWorkspaceStore();
+ * ```
+ */
+export function createWorkspaceStore(): WorkspaceStore {
+  return {
+    workspaces: Object.create(null) as Record<WorkspaceId, FamilyWorkspace>,
+    memberships: Object.create(null) as Record<WorkspaceId, WorkspaceMember[]>,
+  };
+}
+
+/**
+ * Adds a workspace (and its initial owner membership) to the store.
+ * Returns a new `WorkspaceStore`; the original is not mutated.
+ * Throws if a workspace with the same ID already exists.
+ */
+export function addWorkspaceToStore(
+  store: WorkspaceStore,
+  workspace: FamilyWorkspace,
+  ownerMembership: WorkspaceMember,
+): WorkspaceStore {
+  if (Object.hasOwn(store.workspaces, workspace.id)) {
+    throw new Error(`Workspace with ID ${workspace.id} already exists`);
+  }
+  const workspaces = Object.assign(
+    Object.create(null) as Record<WorkspaceId, FamilyWorkspace>,
+    store.workspaces,
+    { [workspace.id]: workspace },
+  );
+  const memberships = Object.assign(
+    Object.create(null) as Record<WorkspaceId, WorkspaceMember[]>,
+    store.memberships,
+    { [workspace.id]: [ownerMembership] },
+  );
+  return { workspaces, memberships };
+}
+
+/**
+ * Returns the workspace with the given ID, or `undefined` if not found.
+ */
+export function getWorkspaceById(
+  store: WorkspaceStore,
+  workspaceId: WorkspaceId,
+): FamilyWorkspace | undefined {
+  return Object.hasOwn(store.workspaces, workspaceId)
+    ? store.workspaces[workspaceId]
+    : undefined;
+}
+
+/**
+ * Returns all workspaces as an array.
+ */
+export function listWorkspaces(store: WorkspaceStore): FamilyWorkspace[] {
+  return Object.values(store.workspaces);
+}
+
+/**
+ * Returns the current member list for the given workspace, or an empty array
+ * if the workspace is not found.
+ */
+export function getMembersForWorkspace(
+  store: WorkspaceStore,
+  workspaceId: WorkspaceId,
+): WorkspaceMember[] {
+  return Object.hasOwn(store.memberships, workspaceId)
+    ? [...store.memberships[workspaceId]]
+    : [];
+}
+
+/**
+ * Adds a member to the membership list for the specified workspace.
+ * Returns a new `WorkspaceStore`; the original is not mutated.
+ * Throws if the workspace is not found or if the user is already a member.
+ */
+export function addMemberToWorkspaceStore(
+  store: WorkspaceStore,
+  workspaceId: WorkspaceId,
+  member: WorkspaceMember,
+): WorkspaceStore {
+  if (!Object.hasOwn(store.workspaces, workspaceId)) {
+    throw new Error(`Workspace with ID ${workspaceId} not found`);
+  }
+  const existing = store.memberships[workspaceId] ?? [];
+  if (existing.some((m) => m.userId === member.userId)) {
+    throw new Error(`User ${member.userId} is already a member of workspace ${workspaceId}`);
+  }
+  const memberships = Object.assign(
+    Object.create(null) as Record<WorkspaceId, WorkspaceMember[]>,
+    store.memberships,
+    { [workspaceId]: [...existing, member] },
+  );
+  return { ...store, memberships };
+}
+
+/**
+ * Removes a member from the membership list for the specified workspace.
+ * Returns a new `WorkspaceStore`; the original is not mutated.
+ * Throws if the workspace is not found, the user is not a member, or the user
+ * is the workspace owner.
+ */
+export function removeMemberFromWorkspaceStore(
+  store: WorkspaceStore,
+  workspaceId: WorkspaceId,
+  userId: UserId,
+): WorkspaceStore {
+  if (!Object.hasOwn(store.workspaces, workspaceId)) {
+    throw new Error(`Workspace with ID ${workspaceId} not found`);
+  }
+  const workspace = store.workspaces[workspaceId];
+  const existing = store.memberships[workspaceId] ?? [];
+  const updated = removeWorkspaceMember(workspace, existing, userId);
+  const memberships = Object.assign(
+    Object.create(null) as Record<WorkspaceId, WorkspaceMember[]>,
+    store.memberships,
+    { [workspaceId]: updated },
+  );
+  return { ...store, memberships };
 }
 
 /**

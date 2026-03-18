@@ -2,10 +2,20 @@ import { describe, it, expect } from 'vitest';
 import {
   createFamilyWorkspace,
   addWorkspaceMember,
+  removeWorkspaceMember,
   isWorkspaceMember,
   getMemberRole,
   createPrivacyRule,
   resolveVisibility,
+  createWorkspaceDataScope,
+  scopeMatchesWorkspace,
+  createWorkspaceStore,
+  addWorkspaceToStore,
+  getWorkspaceById,
+  listWorkspaces,
+  getMembersForWorkspace,
+  addMemberToWorkspaceStore,
+  removeMemberFromWorkspaceStore,
 } from './workspace.js';
 
 describe('createFamilyWorkspace', () => {
@@ -177,5 +187,191 @@ describe('resolveVisibility', () => {
   it('returns false when rule is undefined (default private)', () => {
     const { members } = makeMembers();
     expect(resolveVisibility(undefined, 'u-member', members)).toBe(false);
+  });
+});
+
+describe('removeWorkspaceMember', () => {
+  function makeSetup() {
+    const { workspace, ownerMembership } = createFamilyWorkspace({ name: 'WS', ownerId: 'u-owner' });
+    const member = addWorkspaceMember(workspace, 'u-member');
+    const viewer = addWorkspaceMember(workspace, 'u-viewer', 'viewer');
+    return { workspace, members: [ownerMembership, member, viewer] };
+  }
+
+  it('removes a member from the list', () => {
+    const { workspace, members } = makeSetup();
+    const updated = removeWorkspaceMember(workspace, members, 'u-member');
+    expect(updated.some((m) => m.userId === 'u-member')).toBe(false);
+    expect(updated).toHaveLength(2);
+  });
+
+  it('removes a viewer from the list', () => {
+    const { workspace, members } = makeSetup();
+    const updated = removeWorkspaceMember(workspace, members, 'u-viewer');
+    expect(updated.some((m) => m.userId === 'u-viewer')).toBe(false);
+    expect(updated).toHaveLength(2);
+  });
+
+  it('does not mutate the original members array', () => {
+    const { workspace, members } = makeSetup();
+    removeWorkspaceMember(workspace, members, 'u-member');
+    expect(members).toHaveLength(3);
+  });
+
+  it('throws when the user is not a member', () => {
+    const { workspace, members } = makeSetup();
+    expect(() => removeWorkspaceMember(workspace, members, 'u-outsider')).toThrow(
+      'is not a member',
+    );
+  });
+
+  it('throws when attempting to remove the workspace owner', () => {
+    const { workspace, members } = makeSetup();
+    expect(() => removeWorkspaceMember(workspace, members, 'u-owner')).toThrow(
+      'Cannot remove the workspace owner',
+    );
+  });
+});
+
+describe('WorkspaceDataScope', () => {
+  it('createWorkspaceDataScope: personal scope has kind personal and ownerId', () => {
+    const scope = createWorkspaceDataScope('personal', 'u-1');
+    expect(scope.kind).toBe('personal');
+    expect(scope.ownerId).toBe('u-1');
+    expect(scope.workspaceId).toBeUndefined();
+  });
+
+  it('createWorkspaceDataScope: workspace scope includes workspaceId', () => {
+    const scope = createWorkspaceDataScope('workspace', 'u-1', 'ws-42');
+    expect(scope.kind).toBe('workspace');
+    expect(scope.ownerId).toBe('u-1');
+    expect(scope.workspaceId).toBe('ws-42');
+  });
+
+  it('createWorkspaceDataScope: throws when ownerId is empty', () => {
+    expect(() => createWorkspaceDataScope('personal', '')).toThrow('Owner ID is required');
+  });
+
+  it('createWorkspaceDataScope: throws when workspaceId missing for workspace kind', () => {
+    expect(() => createWorkspaceDataScope('workspace', 'u-1', undefined as unknown as string)).toThrow(
+      'Workspace ID is required',
+    );
+  });
+
+  it('scopeMatchesWorkspace: personal scope matches personal check', () => {
+    const scope = createWorkspaceDataScope('personal', 'u-1');
+    expect(scopeMatchesWorkspace(scope, 'u-1')).toBe(true);
+  });
+
+  it('scopeMatchesWorkspace: personal scope does not match workspace check', () => {
+    const scope = createWorkspaceDataScope('personal', 'u-1');
+    expect(scopeMatchesWorkspace(scope, 'u-1', 'ws-1')).toBe(false);
+  });
+
+  it('scopeMatchesWorkspace: workspace scope matches the correct workspace', () => {
+    const scope = createWorkspaceDataScope('workspace', 'u-1', 'ws-42');
+    expect(scopeMatchesWorkspace(scope, 'u-1', 'ws-42')).toBe(true);
+  });
+
+  it('scopeMatchesWorkspace: workspace scope does not match a different workspace', () => {
+    const scope = createWorkspaceDataScope('workspace', 'u-1', 'ws-42');
+    expect(scopeMatchesWorkspace(scope, 'u-1', 'ws-99')).toBe(false);
+  });
+
+  it('scopeMatchesWorkspace: returns false for wrong owner', () => {
+    const scope = createWorkspaceDataScope('personal', 'u-1');
+    expect(scopeMatchesWorkspace(scope, 'u-2')).toBe(false);
+  });
+});
+
+describe('WorkspaceStore', () => {
+  function makePopulatedStore() {
+    const { workspace, ownerMembership } = createFamilyWorkspace({ name: 'Family', ownerId: 'u-owner' });
+    const store = addWorkspaceToStore(createWorkspaceStore(), workspace, ownerMembership);
+    return { store, workspace, ownerMembership };
+  }
+
+  it('createWorkspaceStore: creates an empty store', () => {
+    const store = createWorkspaceStore();
+    expect(listWorkspaces(store)).toHaveLength(0);
+  });
+
+  it('addWorkspaceToStore: adds a workspace and its owner membership', () => {
+    const { store, workspace } = makePopulatedStore();
+    expect(getWorkspaceById(store, workspace.id)).toMatchObject({ name: 'Family' });
+    expect(getMembersForWorkspace(store, workspace.id)).toHaveLength(1);
+    expect(getMembersForWorkspace(store, workspace.id)[0].role).toBe('owner');
+  });
+
+  it('addWorkspaceToStore: throws on duplicate workspace ID', () => {
+    const { store, workspace, ownerMembership } = makePopulatedStore();
+    expect(() => addWorkspaceToStore(store, workspace, ownerMembership)).toThrow('already exists');
+  });
+
+  it('addWorkspaceToStore: does not mutate the original store', () => {
+    const base = createWorkspaceStore();
+    const { workspace, ownerMembership } = createFamilyWorkspace({ name: 'WS', ownerId: 'u-1' });
+    addWorkspaceToStore(base, workspace, ownerMembership);
+    expect(listWorkspaces(base)).toHaveLength(0);
+  });
+
+  it('listWorkspaces: returns all workspaces', () => {
+    const { workspace: ws1, ownerMembership: om1 } = createFamilyWorkspace({ name: 'A', ownerId: 'u-1' });
+    const { workspace: ws2, ownerMembership: om2 } = createFamilyWorkspace({ name: 'B', ownerId: 'u-2' });
+    let store = createWorkspaceStore();
+    store = addWorkspaceToStore(store, ws1, om1);
+    store = addWorkspaceToStore(store, ws2, om2);
+    expect(listWorkspaces(store)).toHaveLength(2);
+  });
+
+  it('getWorkspaceById: returns undefined for unknown ID', () => {
+    const store = createWorkspaceStore();
+    expect(getWorkspaceById(store, 'no-such-id')).toBeUndefined();
+  });
+
+  it('getMembersForWorkspace: returns empty array for unknown workspace', () => {
+    const store = createWorkspaceStore();
+    expect(getMembersForWorkspace(store, 'unknown')).toEqual([]);
+  });
+
+  it('addMemberToWorkspaceStore: adds a new member', () => {
+    const { store, workspace } = makePopulatedStore();
+    const newMember = addWorkspaceMember(workspace, 'u-new');
+    const updated = addMemberToWorkspaceStore(store, workspace.id, newMember);
+    expect(getMembersForWorkspace(updated, workspace.id)).toHaveLength(2);
+  });
+
+  it('addMemberToWorkspaceStore: throws for unknown workspace', () => {
+    const { store } = makePopulatedStore();
+    const { workspace: other } = createFamilyWorkspace({ name: 'Other', ownerId: 'u-x' });
+    const m = addWorkspaceMember(other, 'u-y');
+    expect(() => addMemberToWorkspaceStore(store, 'no-such-ws', m)).toThrow('not found');
+  });
+
+  it('addMemberToWorkspaceStore: throws on duplicate user', () => {
+    const { store, workspace, ownerMembership } = makePopulatedStore();
+    expect(() => addMemberToWorkspaceStore(store, workspace.id, ownerMembership)).toThrow(
+      'already a member',
+    );
+  });
+
+  it('removeMemberFromWorkspaceStore: removes an existing member', () => {
+    const { store, workspace } = makePopulatedStore();
+    const newMember = addWorkspaceMember(workspace, 'u-extra');
+    const withMember = addMemberToWorkspaceStore(store, workspace.id, newMember);
+    const removed = removeMemberFromWorkspaceStore(withMember, workspace.id, 'u-extra');
+    expect(getMembersForWorkspace(removed, workspace.id)).toHaveLength(1);
+  });
+
+  it('removeMemberFromWorkspaceStore: throws when trying to remove owner', () => {
+    const { store, workspace } = makePopulatedStore();
+    expect(() => removeMemberFromWorkspaceStore(store, workspace.id, 'u-owner')).toThrow(
+      'Cannot remove the workspace owner',
+    );
+  });
+
+  it('removeMemberFromWorkspaceStore: throws for unknown workspace', () => {
+    const { store } = makePopulatedStore();
+    expect(() => removeMemberFromWorkspaceStore(store, 'no-such-ws', 'u-x')).toThrow('not found');
   });
 });
