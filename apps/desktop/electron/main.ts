@@ -1,6 +1,8 @@
 import { app, BrowserWindow } from 'electron';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { createLogger } from '@spendstack/shared';
+import { createFileLogSink } from '@spendstack/infrastructure';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -18,11 +20,20 @@ process.env['VITE_PUBLIC'] = app.isPackaged
   ? process.env['DIST']!
   : path.join(process.env['DIST']!, '../public');
 
+// Initialise structured logger backed by a rotating file sink.
+const logDir = path.join(app.getPath('userData'), 'logs');
+const log = createLogger({
+  context: 'main',
+  sink: createFileLogSink({ logDir }),
+});
+
 let win: BrowserWindow | null = null;
 
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
 
 function createWindow() {
+  log.info('Creating main window');
+
   win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -49,6 +60,7 @@ function createWindow() {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
+    log.info('All windows closed — quitting');
     app.quit();
     win = null;
   }
@@ -60,4 +72,9 @@ app.on('activate', () => {
   }
 });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  log.info('Application ready', { version: app.getVersion() });
+  createWindow();
+}).catch((err: unknown) => {
+  log.error('Application failed to initialise', { error: String(err) });
+});
