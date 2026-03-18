@@ -23,6 +23,8 @@ export const FEATURE_FLAGS = {
   insightsEnabled: false,
   /** Enable AI-assisted insight generation (requires explicit user consent). */
   aiInsights: false,
+  /** Enable optional PIN convenience unlock after primary authentication. */
+  pinUnlock: false,
 } as const;
 
 export type FeatureFlagName = keyof typeof FEATURE_FLAGS;

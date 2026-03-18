@@ -25,6 +25,12 @@ export {
   invalidateSession,
   serializeSession,
   deserializeSession,
+  PIN_MAX_ATTEMPTS,
+  PIN_LOCKOUT_SECONDS,
+  createPinAttemptState,
+  isPinLocked,
+  recordPinSuccess,
+  recordPinFailure,
 } from './identity.js';
 export type {
   UserId,
@@ -36,6 +42,7 @@ export type {
   ProfileDataScope,
   AuthSession,
   CreateSessionOptions,
+  PinAttemptState,
 } from './identity.js';
 
 export {
