@@ -12,4 +12,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener('main-process-message', handler);
     };
   },
+
+  /**
+   * Returns a snapshot of all resolved feature flags from the main process.
+   * The main process is the authoritative source because it has full access to
+   * environment variables and runtime overrides.
+   */
+  getFlags: (): Promise<Record<string, boolean>> =>
+    ipcRenderer.invoke('get-feature-flags'),
 });

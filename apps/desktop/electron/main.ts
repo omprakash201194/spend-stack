@@ -1,7 +1,7 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { createLogger } from '@spendstack/shared';
+import { createLogger, flags } from '@spendstack/shared';
 import { createFileLogSink } from '@spendstack/infrastructure';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -71,6 +71,9 @@ app.on('activate', () => {
     createWindow();
   }
 });
+
+// Expose all resolved feature flags to the renderer process.
+ipcMain.handle('get-feature-flags', () => flags.getAll());
 
 app.whenReady().then(() => {
   log.info('Application ready', { version: app.getVersion() });
