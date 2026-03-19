@@ -65,7 +65,11 @@ export interface ImportPipelineResult {
   duplicates: DuplicateDetectionResult;
   reviewItems: ReviewQueueItem[];
   parserWarnings: string[];
-  /** Structured parse errors emitted by the parser adapter during extraction and validation. */
+  /**
+   * Structured errors from the full import pipeline, including both
+   * parser-adapter-level validation errors and pipeline-level resolution
+   * failures (e.g. `unsupported_format` when no adapter matches).
+   */
   parseErrors: ParseError[];
   /** Whether any items require human review before finalization. */
   reviewRequired: boolean;
@@ -118,6 +122,7 @@ export function runImportPipeline(input: ImportPipelineInput): ImportPipelineRes
   // ------------------------------------------------------------------
   const parser = resolveParser(fileContent, fileType);
   if (!parser) {
+    const noParserMsg = `No parser found for fileType="${fileType}". The file format may not be supported.`;
     return {
       statementFile,
       importJobId: fileId,
@@ -128,11 +133,11 @@ export function runImportPipeline(input: ImportPipelineInput): ImportPipelineRes
       normalizedTransactions: [],
       duplicates: { unique: [], exactDuplicates: [], fuzzyCandidates: [] },
       reviewItems: [],
-      parserWarnings: [`No parser found for fileType="${fileType}". The file format may not be supported.`],
+      parserWarnings: [noParserMsg],
       parseErrors: [
         {
           code: 'unsupported_format',
-          message: `No parser found for fileType="${fileType}". The file format may not be supported.`,
+          message: noParserMsg,
           severity: 'error',
         },
       ],

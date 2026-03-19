@@ -147,6 +147,7 @@ describe('iciciBankCsvParser.validate', () => {
       balanceIfAvailable: null,
       currency: 'INR',
       rawReference: '',
+      sourceReference: 'row-7',
     };
     const result = iciciBankCsvParser.validate({
       rawRows: [],
@@ -161,7 +162,17 @@ describe('iciciBankCsvParser.validate', () => {
     const codes = result.parseErrors.map((e) => e.code);
     expect(codes).toContain('missing_date');
     expect(codes).toContain('missing_amount');
-    result.parseErrors.forEach((e) => expect(e.severity).toBe('error'));
+    result.parseErrors.forEach((e) => {
+      expect(e.severity).toBe('error');
+      expect(e.sourceReference).toBe('row-7');
+    });
+  });
+
+  it('carries sourceReference through normalize and into validate errors', () => {
+    const rows = iciciBankCsvParser.extract(ICICI_CSV);
+    const normalizedCandidates = iciciBankCsvParser.normalize(rows);
+    // Every normalized candidate should carry the sourceReference from its raw row
+    normalizedCandidates.forEach((tx) => expect(tx.sourceReference).toMatch(/^row-\d+$/));
   });
 });
 

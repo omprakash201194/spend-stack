@@ -38,6 +38,12 @@ export interface NormalizedTransaction {
    * Empty string when not present.
    */
   rawReference: string;
+  /**
+   * The `RawStatementRow.sourceReference` of the row this transaction was
+   * produced from.  Carried through normalization so that parsers can link
+   * validation errors back to the exact source row.
+   */
+  sourceReference?: string;
 }
 
 /**
@@ -108,7 +114,7 @@ export interface ParseResult {
   /**
    * @deprecated Use `parseErrors` for structured error capture.
    * Kept for backward compatibility; mirrors the `message` fields of
-   * `parseErrors` with severity 'warning'.
+   * all entries in `parseErrors` (both 'error' and 'warning' severity).
    */
   parserWarnings: string[];
   confidenceSummary: ParseConfidenceSummary;

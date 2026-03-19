@@ -138,6 +138,7 @@ export const bankOfBarodaCsvParser: ParserDefinition = {
         balanceIfAvailable: parseAmount(meta.balanceText ?? ''),
         currency: 'INR',
         rawReference: meta.refNoText ?? '',
+        sourceReference: row.sourceReference,
       });
     }
 
@@ -160,12 +161,12 @@ export const bankOfBarodaCsvParser: ParserDefinition = {
         if (missingDate) {
           const msg = `Row with description "${tx.description}" is missing a date.`;
           warnings.push(msg);
-          parseErrors.push({ code: 'missing_date', message: msg, severity: 'error' });
+          parseErrors.push({ code: 'missing_date', message: msg, severity: 'error', sourceReference: tx.sourceReference });
         }
         if (missingAmount) {
           const msg = `Row with description "${tx.description}" is missing an amount.`;
           warnings.push(msg);
-          parseErrors.push({ code: 'missing_amount', message: msg, severity: 'error' });
+          parseErrors.push({ code: 'missing_amount', message: msg, severity: 'error', sourceReference: tx.sourceReference });
         }
       } else if (!tx.description) {
         lowConfidence += 1;
@@ -175,6 +176,7 @@ export const bankOfBarodaCsvParser: ParserDefinition = {
           code: 'empty_description',
           message: msg,
           severity: 'warning',
+          sourceReference: tx.sourceReference,
         });
       } else {
         highConfidence += 1;
