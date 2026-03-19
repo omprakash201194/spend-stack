@@ -6,8 +6,8 @@
  * transitions are validated to prevent impossible moves and each transition is
  * timestamped so the history can be reconstructed from the entity alone.
  *
- * All functions are pure and side-effect-free; persistence is the caller's
- * responsibility.
+ * Functions return new objects — they do not mutate their inputs.  Persistence,
+ * clock injection, and ID generation are the caller's responsibility.
  */
 
 import { randomBytes } from 'crypto';
@@ -93,6 +93,13 @@ export interface ImportJobSummary {
 
 /** Parameters required to create a new import job. */
 export interface CreateImportJobParams {
+  /**
+   * Explicit stable ID for this job.  When omitted a random hex ID is
+   * generated.  Pass the file's own ID here to keep a single stable
+   * identifier across the import lifecycle (pipeline source traces, job
+   * entity, and UI all reference the same value).
+   */
+  id?: string;
   /** ID of the file being imported. */
   fileId: string;
   /** Original file name as uploaded. */
@@ -168,7 +175,7 @@ const VALID_TRANSITIONS: Record<ImportJobStatus, readonly ImportJobStatus[]> = {
 export function createImportJob(params: CreateImportJobParams): ImportJob {
   const now = new Date().toISOString();
   return {
-    id: randomBytes(8).toString('hex'),
+    id: params.id ?? randomBytes(8).toString('hex'),
     fileId: params.fileId,
     fileName: params.fileName,
     accountId: params.accountId,
@@ -215,6 +222,15 @@ export function transitionJobStatus(job: ImportJob, next: ImportJobStatus): Impo
 
   if (next === 'completed' || next === 'failed') {
     updated.completedAt = now;
+  }
+
+  // Retry: when re-queuing a failed job, clear all terminal-state fields so
+  // the entity accurately reflects the fresh queued state (no stale error,
+  // summary, or completedAt from the previous run).
+  if (next === 'queued') {
+    delete updated.completedAt;
+    delete updated.error;
+    delete updated.summary;
   }
 
   return updated;

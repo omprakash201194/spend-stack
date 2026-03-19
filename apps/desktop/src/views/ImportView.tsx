@@ -108,8 +108,10 @@ function ImportView() {
 
       const fileId = generateFileId();
 
-      // Create an import job and move it to processing.
+      // Create an import job using fileId as the job id so that the job entity,
+      // pipeline source traces, and UI all share a single stable identifier.
       let importJob = createImportJob({
+        id: fileId,
         fileId,
         fileName: file.name,
         accountId: 'default',
@@ -144,7 +146,11 @@ function ImportView() {
 
       const summary = {
         totalRowsDetected: result.metrics.totalRowsDetected,
-        rowsProcessed: Math.max(0, result.metrics.rowsParsed - result.metrics.duplicateRowsSkipped),
+        // Use the count of transactions that actually passed through the full
+        // pipeline (de-duplication, transfer detection, categorisation).
+        // rowsParsed includes fuzzy duplicate candidates surfaced for review,
+        // so subtracting only exact duplicates would overcount processed rows.
+        rowsProcessed: result.normalizedTransactions.length,
         rowsSkipped: result.metrics.duplicateRowsSkipped,
         rowsFailed: 0,
         rowsFlaggedForReview: result.metrics.rowsFlaggedForReview,

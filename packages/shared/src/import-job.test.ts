@@ -8,13 +8,13 @@ import {
   formatJobStatusLabel,
   isTerminalJobStatus,
 } from './import-job.js';
-import type { ImportJob, ImportJobSummary } from './import-job.js';
+import type { CreateImportJobParams, ImportJobSummary } from './import-job.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeJob(overrides: Partial<ImportJob> = {}): ImportJob {
+function makeJob(overrides: Partial<CreateImportJobParams> = {}) {
   return createImportJob({
     fileId: 'file-1',
     fileName: 'statement.csv',
@@ -54,6 +54,11 @@ describe('createImportJob', () => {
     const a = makeJob();
     const b = makeJob();
     expect(a.id).not.toBe(b.id);
+  });
+
+  it('uses an explicit id when provided', () => {
+    const job = makeJob({ id: 'job-explicit-42' });
+    expect(job.id).toBe('job-explicit-42');
   });
 
   it('sets a valid ISO 8601 createdAt timestamp', () => {
@@ -161,6 +166,29 @@ describe('transitionJobStatus', () => {
     const job = transitionJobStatus(transitionJobStatus(makeJob(), 'processing'), 'failed');
     const retried = transitionJobStatus(job, 'queued');
     expect(retried.status).toBe('queued');
+  });
+
+  it('clears completedAt on retry (failed → queued)', () => {
+    const failed = transitionJobStatus(transitionJobStatus(makeJob(), 'processing'), 'failed');
+    expect(failed.completedAt).toBeDefined();
+    const retried = transitionJobStatus(failed, 'queued');
+    expect(retried.completedAt).toBeUndefined();
+  });
+
+  it('clears error on retry (failed → queued)', () => {
+    const processing = transitionJobStatus(makeJob(), 'processing');
+    const failed = recordJobError(processing, { code: 'ERR', message: 'msg' });
+    expect(failed.error).toBeDefined();
+    const retried = transitionJobStatus(failed, 'queued');
+    expect(retried.error).toBeUndefined();
+  });
+
+  it('clears summary on retry (failed → queued)', () => {
+    const processing = transitionJobStatus(makeJob(), 'processing');
+    const review = markJobNeedsReview(processing, SAMPLE_SUMMARY);
+    const failed = recordJobError(review, { code: 'ERR', message: 'msg' });
+    const retried = transitionJobStatus(failed, 'queued');
+    expect(retried.summary).toBeUndefined();
   });
 
   it('updates updatedAt on every transition', () => {
