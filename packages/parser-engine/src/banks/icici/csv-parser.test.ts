@@ -20,6 +20,14 @@ const ICICI_FLEXIBLE_CSV = `transaction date,value date,description,ref no./cheq
 const FOREIGN_CSV = `Date,Narration,Amount
 01/01/2024,SOME PAYMENT,500.00`;
 
+// Realistic ICICI export that includes account-info preamble rows before the
+// transaction header — a format produced by ICICI Internet Banking.
+const ICICI_WITH_PREAMBLE_CSV = `Account Number:123456789012
+Statement Period:01/01/2024 to 31/01/2024
+Transaction Date,Value Date,Description,Ref No./Cheque No.,Debit,Credit,Balance
+05/01/2024,05/01/2024,NEFT/SALARY CREDIT,REF001,,25000.00,75000.00
+12/01/2024,12/01/2024,UPI/GROCERY,,1500.00,,73500.00`;
+
 describe('iciciBankCsvParser.detect', () => {
   it('detects a valid ICICI CSV', () => {
     expect(iciciBankCsvParser.detect(ICICI_CSV)).toBe(true);
@@ -35,6 +43,10 @@ describe('iciciBankCsvParser.detect', () => {
 
   it('returns false for empty content', () => {
     expect(iciciBankCsvParser.detect('')).toBe(false);
+  });
+
+  it('detects an ICICI CSV with account-info preamble rows', () => {
+    expect(iciciBankCsvParser.detect(ICICI_WITH_PREAMBLE_CSV)).toBe(true);
   });
 });
 
@@ -53,6 +65,18 @@ describe('iciciBankCsvParser.extract', () => {
   it('captures the raw line text', () => {
     const rows = iciciBankCsvParser.extract(ICICI_CSV);
     expect(rows[0]?.rawText).toContain('SALARY CREDIT');
+  });
+
+  it('extracts rows from a statement with account-info preamble', () => {
+    const rows = iciciBankCsvParser.extract(ICICI_WITH_PREAMBLE_CSV);
+    expect(rows.length).toBe(2);
+    expect(rows[0]?.rawText).toContain('SALARY');
+    expect(rows[1]?.rawText).toContain('GROCERY');
+  });
+
+  it('returns empty array when no header is found', () => {
+    expect(iciciBankCsvParser.extract(FOREIGN_CSV)).toHaveLength(0);
+    expect(iciciBankCsvParser.extract('')).toHaveLength(0);
   });
 });
 
