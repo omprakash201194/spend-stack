@@ -138,6 +138,7 @@ export const bankOfBarodaCsvParser: ParserDefinition = {
         balanceIfAvailable: parseAmount(meta.balanceText ?? ''),
         currency: 'INR',
         rawReference: meta.refNoText ?? '',
+        sourceReference: row.sourceReference,
       });
     }
 
@@ -146,17 +147,37 @@ export const bankOfBarodaCsvParser: ParserDefinition = {
 
   validate(result: ParseResult): ParseResult {
     const warnings = [...result.parserWarnings];
+    const parseErrors = [...result.parseErrors];
     let highConfidence = 0;
     let lowConfidence = 0;
     let failed = 0;
 
     for (const tx of result.normalizedCandidates) {
-      if (!tx.date || (!tx.debitAmount && !tx.creditAmount)) {
+      const missingDate = !tx.date;
+      const missingAmount = tx.debitAmount === null && tx.creditAmount === null;
+
+      if (missingDate || missingAmount) {
         failed += 1;
-        warnings.push(`Row with description "${tx.description}" is missing required fields.`);
+        if (missingDate) {
+          const msg = `Row with description "${tx.description}" is missing a date.`;
+          warnings.push(msg);
+          parseErrors.push({ code: 'missing_date', message: msg, severity: 'error', sourceReference: tx.sourceReference });
+        }
+        if (missingAmount) {
+          const msg = `Row with description "${tx.description}" is missing an amount.`;
+          warnings.push(msg);
+          parseErrors.push({ code: 'missing_amount', message: msg, severity: 'error', sourceReference: tx.sourceReference });
+        }
       } else if (!tx.description) {
         lowConfidence += 1;
-        warnings.push(`Transaction on ${tx.date} has an empty description.`);
+        const msg = `Transaction on ${tx.date} has an empty description.`;
+        warnings.push(msg);
+        parseErrors.push({
+          code: 'empty_description',
+          message: msg,
+          severity: 'warning',
+          sourceReference: tx.sourceReference,
+        });
       } else {
         highConfidence += 1;
       }
@@ -165,6 +186,7 @@ export const bankOfBarodaCsvParser: ParserDefinition = {
     return {
       ...result,
       parserWarnings: warnings,
+      parseErrors,
       confidenceSummary: {
         totalRows: result.rawRows.length,
         highConfidence,

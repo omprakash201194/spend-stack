@@ -90,6 +90,18 @@ describe('runImportPipeline — ICICI CSV', () => {
     });
     expect(result.parserVersion).toBe('1.0.0');
   });
+
+  it('returns an empty parseErrors array for a clean statement', () => {
+    const result = runImportPipeline({
+      fileId: 'file-005',
+      fileName: 'statement.csv',
+      fileContent: ICICI_CSV,
+      fileType: 'csv',
+      accountId: 'acc-1',
+      uploadedByUserId: 'user-1',
+    });
+    expect(result.parseErrors).toHaveLength(0);
+  });
 });
 
 describe('runImportPipeline — Kotak CSV', () => {
@@ -122,6 +134,21 @@ describe('runImportPipeline — unsupported format', () => {
     expect(result.parserId).toBe('unknown');
     expect(result.parserWarnings.length).toBeGreaterThan(0);
     expect(result.normalizedTransactions).toHaveLength(0);
+  });
+
+  it('populates parseErrors with an unsupported_format error when no parser is found', () => {
+    const result = runImportPipeline({
+      fileId: 'file-101',
+      fileName: 'unknown.csv',
+      fileContent: UNKNOWN_CSV,
+      fileType: 'csv',
+      accountId: 'acc-1',
+      uploadedByUserId: 'user-1',
+    });
+
+    expect(result.parseErrors).toHaveLength(1);
+    expect(result.parseErrors[0]?.code).toBe('unsupported_format');
+    expect(result.parseErrors[0]?.severity).toBe('error');
   });
 });
 

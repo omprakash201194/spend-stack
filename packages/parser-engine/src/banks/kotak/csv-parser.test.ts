@@ -95,11 +95,26 @@ describe('kotakBankCsvParser.validate', () => {
       rawRows: rows,
       normalizedCandidates,
       parserWarnings: [],
+      parseErrors: [],
       confidenceSummary: { totalRows: 0, highConfidence: 0, lowConfidence: 0, failed: 0 },
       debugMetadata: {},
     });
     expect(result.confidenceSummary.highConfidence).toBe(normalizedCandidates.length);
     expect(result.confidenceSummary.failed).toBe(0);
+  });
+
+  it('emits no parseErrors for a clean statement', () => {
+    const rows = kotakBankCsvParser.extract(KOTAK_CSV);
+    const normalizedCandidates = kotakBankCsvParser.normalize(rows);
+    const result = kotakBankCsvParser.validate({
+      rawRows: rows,
+      normalizedCandidates,
+      parserWarnings: [],
+      parseErrors: [],
+      confidenceSummary: { totalRows: 0, highConfidence: 0, lowConfidence: 0, failed: 0 },
+      debugMetadata: {},
+    });
+    expect(result.parseErrors).toHaveLength(0);
   });
 });
 

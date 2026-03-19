@@ -114,12 +114,65 @@ describe('iciciBankCsvParser.validate', () => {
       rawRows: rows,
       normalizedCandidates,
       parserWarnings: [],
+      parseErrors: [],
       confidenceSummary: { totalRows: 0, highConfidence: 0, lowConfidence: 0, failed: 0 },
       debugMetadata: {},
     });
     expect(result.confidenceSummary.totalRows).toBe(rows.length);
     expect(result.confidenceSummary.highConfidence).toBe(normalizedCandidates.length);
     expect(result.confidenceSummary.failed).toBe(0);
+  });
+
+  it('emits no parseErrors for a clean statement', () => {
+    const rows = iciciBankCsvParser.extract(ICICI_CSV);
+    const normalizedCandidates = iciciBankCsvParser.normalize(rows);
+    const result = iciciBankCsvParser.validate({
+      rawRows: rows,
+      normalizedCandidates,
+      parserWarnings: [],
+      parseErrors: [],
+      confidenceSummary: { totalRows: 0, highConfidence: 0, lowConfidence: 0, failed: 0 },
+      debugMetadata: {},
+    });
+    expect(result.parseErrors).toHaveLength(0);
+  });
+
+  it('emits a structured ParseError for a transaction missing date and amount', () => {
+    const badTx = {
+      date: '',
+      description: 'BAD ROW',
+      debitAmount: null,
+      creditAmount: null,
+      signedAmount: 0,
+      balanceIfAvailable: null,
+      currency: 'INR',
+      rawReference: '',
+      sourceReference: 'row-7',
+    };
+    const result = iciciBankCsvParser.validate({
+      rawRows: [],
+      normalizedCandidates: [badTx],
+      parserWarnings: [],
+      parseErrors: [],
+      confidenceSummary: { totalRows: 0, highConfidence: 0, lowConfidence: 0, failed: 0 },
+      debugMetadata: {},
+    });
+    // Two separate errors emitted: one for missing date, one for missing amount
+    expect(result.parseErrors).toHaveLength(2);
+    const codes = result.parseErrors.map((e) => e.code);
+    expect(codes).toContain('missing_date');
+    expect(codes).toContain('missing_amount');
+    result.parseErrors.forEach((e) => {
+      expect(e.severity).toBe('error');
+      expect(e.sourceReference).toBe('row-7');
+    });
+  });
+
+  it('carries sourceReference through normalize and into validate errors', () => {
+    const rows = iciciBankCsvParser.extract(ICICI_CSV);
+    const normalizedCandidates = iciciBankCsvParser.normalize(rows);
+    // Every normalized candidate should carry the sourceReference from its raw row
+    normalizedCandidates.forEach((tx) => expect(tx.sourceReference).toMatch(/^row-\d+$/));
   });
 });
 
