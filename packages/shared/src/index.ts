@@ -108,6 +108,23 @@ export type {
 } from './diagnostics.js';
 
 export {
+  createImportJob,
+  transitionJobStatus,
+  recordJobError,
+  finalizeImportJob,
+  markJobNeedsReview,
+  formatJobStatusLabel,
+  isTerminalJobStatus,
+} from './import-job.js';
+export type {
+  ImportJobStatus,
+  ImportJobError,
+  ImportJobSummary,
+  CreateImportJobParams,
+  ImportJob,
+} from './import-job.js';
+
+export {
   computeBalanceSummary,
   computeCashflowSummary,
   createInsightConsent,

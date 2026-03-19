@@ -1,6 +1,15 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { runImportPipeline } from '@spendstack/parser-engine';
 import type { FileType } from '@spendstack/parser-engine';
+import {
+  createImportJob,
+  transitionJobStatus,
+  markJobNeedsReview,
+  finalizeImportJob,
+  recordJobError,
+  formatJobStatusLabel,
+} from '@spendstack/shared';
+import type { ImportJob } from '@spendstack/shared';
 
 const SUPPORTED_BANKS = ['ICICI Bank', 'Bank of Baroda', 'Kotak Bank'];
 const SUPPORTED_FORMATS = ['PDF', 'CSV', 'XLSX'];
@@ -26,7 +35,7 @@ type ImportPhase =
   | {
       kind: 'done';
       fileName: string;
-      importJobId: string;
+      importJob: ImportJob;
       parserId: string;
       metrics: { totalRowsDetected: number; rowsParsed: number; duplicateRowsSkipped: number; rowsFlaggedForReview: number };
       reviewRequired: boolean;
@@ -99,6 +108,15 @@ function ImportView() {
 
       const fileId = generateFileId();
 
+      // Create an import job and move it to processing.
+      let importJob = createImportJob({
+        fileId,
+        fileName: file.name,
+        accountId: 'default',
+        uploadedByUserId: 'local-user',
+      });
+      importJob = transitionJobStatus(importJob, 'processing');
+
       // runImportPipeline is synchronous — it returns a plain result object.
       const result = runImportPipeline({
         fileId,
@@ -116,14 +134,32 @@ function ImportView() {
           result.parserWarnings.length > 0
             ? result.parserWarnings.join(' ')
             : 'The file could not be parsed. It may be unsupported or corrupted.';
+        importJob = recordJobError(importJob, {
+          code: 'PIPELINE_FAILED',
+          message,
+        });
         setPhase({ kind: 'error', fileName: file.name, message });
         return;
       }
 
+      const summary = {
+        totalRowsDetected: result.metrics.totalRowsDetected,
+        rowsProcessed: Math.max(0, result.metrics.rowsParsed - result.metrics.duplicateRowsSkipped),
+        rowsSkipped: result.metrics.duplicateRowsSkipped,
+        rowsFailed: 0,
+        rowsFlaggedForReview: result.metrics.rowsFlaggedForReview,
+        parserId: result.parserId,
+        parserVersion: result.parserVersion,
+      };
+
+      importJob = result.reviewRequired
+        ? markJobNeedsReview(importJob, summary)
+        : finalizeImportJob(importJob, summary);
+
       setPhase({
         kind: 'done',
         fileName: file.name,
-        importJobId: result.importJobId,
+        importJob,
         parserId: result.parserId,
         metrics: result.metrics,
         reviewRequired: result.reviewRequired,
@@ -273,7 +309,8 @@ function ImportView() {
             <span className="import-result-icon">✅</span>
             <div>
               <h3>Import complete</h3>
-              <p className="import-result-meta">{phase.fileName} · Job {phase.importJobId} · Parser: {phase.parserId}</p>
+              <p className="import-result-meta">{phase.fileName} · Job {phase.importJob.id} · Parser: {phase.parserId}</p>
+              <p className="import-result-status">Status: {formatJobStatusLabel(phase.importJob.status)}</p>
             </div>
           </div>
 
