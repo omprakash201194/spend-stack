@@ -6,6 +6,8 @@ export type {
   NormalizedTransaction,
   RawStatementRow,
   ParseConfidenceSummary,
+  ParseErrorCode,
+  ParseError,
   ParseResult,
   ParserDefinition,
   ReviewQueueReason,

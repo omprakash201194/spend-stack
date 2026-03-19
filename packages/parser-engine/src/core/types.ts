@@ -64,11 +64,52 @@ export interface ParseConfidenceSummary {
 }
 
 /**
+ * Machine-readable codes for errors emitted by bank parsers.
+ *
+ * Using an explicit union (rather than an open string type) ensures every
+ * parser emits a code that callers can safely switch on.
+ */
+export type ParseErrorCode =
+  | 'missing_date'
+  | 'missing_amount'
+  | 'empty_description'
+  | 'invalid_format'
+  | 'column_mapping_failed'
+  | 'unsupported_format';
+
+/**
+ * A structured error produced by a bank parser.
+ *
+ * All parsers must use this type (via `ParseResult.parseErrors`) so that
+ * callers can handle errors uniformly regardless of which adapter ran.
+ */
+export interface ParseError {
+  /** Machine-readable error code — allows callers to switch on error type. */
+  code: ParseErrorCode;
+  /** Human-readable explanation of the error. */
+  message: string;
+  /** Whether the error is fatal for this row ('error') or advisory ('warning'). */
+  severity: 'error' | 'warning';
+  /**
+   * The `RawStatementRow.sourceReference` of the row that caused the error,
+   * when the error can be tied to a specific row.
+   */
+  sourceReference?: string;
+}
+
+/**
  * The full output produced by running a parser on a statement file.
  */
 export interface ParseResult {
   rawRows: RawStatementRow[];
   normalizedCandidates: NormalizedTransaction[];
+  /** Structured errors captured during extraction and validation. */
+  parseErrors: ParseError[];
+  /**
+   * @deprecated Use `parseErrors` for structured error capture.
+   * Kept for backward compatibility; mirrors the `message` fields of
+   * `parseErrors` with severity 'warning'.
+   */
   parserWarnings: string[];
   confidenceSummary: ParseConfidenceSummary;
   debugMetadata: Record<string, unknown>;

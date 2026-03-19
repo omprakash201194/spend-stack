@@ -85,11 +85,26 @@ describe('bankOfBarodaCsvParser.validate', () => {
       rawRows: rows,
       normalizedCandidates,
       parserWarnings: [],
+      parseErrors: [],
       confidenceSummary: { totalRows: 0, highConfidence: 0, lowConfidence: 0, failed: 0 },
       debugMetadata: {},
     });
     expect(result.confidenceSummary.highConfidence).toBe(normalizedCandidates.length);
     expect(result.confidenceSummary.failed).toBe(0);
+  });
+
+  it('emits no parseErrors for a clean statement', () => {
+    const rows = bankOfBarodaCsvParser.extract(BOB_CSV);
+    const normalizedCandidates = bankOfBarodaCsvParser.normalize(rows);
+    const result = bankOfBarodaCsvParser.validate({
+      rawRows: rows,
+      normalizedCandidates,
+      parserWarnings: [],
+      parseErrors: [],
+      confidenceSummary: { totalRows: 0, highConfidence: 0, lowConfidence: 0, failed: 0 },
+      debugMetadata: {},
+    });
+    expect(result.parseErrors).toHaveLength(0);
   });
 });
 
