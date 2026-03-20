@@ -10,6 +10,7 @@ function makeTx(
   date: string,
   signedAmount: number,
   description: string,
+  sourceReference?: string,
 ): NormalizedTransaction {
   return {
     date,
@@ -20,6 +21,7 @@ function makeTx(
     balanceIfAvailable: null,
     currency: 'INR',
     rawReference: '',
+    sourceReference,
   };
 }
 
@@ -121,5 +123,134 @@ describe('descriptionSimilarity', () => {
 
   it('is case-insensitive', () => {
     expect(descriptionSimilarity('salary credit', 'SALARY CREDIT')).toBe(1);
+  });
+});
+
+describe('detectDuplicates — decisions traceability', () => {
+  const existing = [
+    makeTx('2024-01-01', -5000, 'ATM WITHDRAWAL'),
+    makeTx('2024-01-02', 50000, 'SALARY CREDIT'),
+  ];
+
+  it('emits one decision per incoming transaction', () => {
+    const incoming = [
+      makeTx('2024-01-03', -1200, 'GROCERY STORE'),
+      makeTx('2024-01-01', -5000, 'ATM WITHDRAWAL'),
+    ];
+    const result = detectDuplicates(incoming, existing, 'acc-1');
+    expect(result.decisions).toHaveLength(2);
+  });
+
+  it('marks unique transactions with outcome "imported"', () => {
+    const incoming = [makeTx('2024-01-10', -300, 'COFFEE SHOP')];
+    const result = detectDuplicates(incoming, existing, 'acc-1');
+    expect(result.decisions[0]?.outcome).toBe('imported');
+  });
+
+  it('marks exact duplicates with outcome "skipped_exact"', () => {
+    const incoming = [makeTx('2024-01-01', -5000, 'ATM WITHDRAWAL')];
+    const result = detectDuplicates(incoming, existing, 'acc-1');
+    expect(result.decisions[0]?.outcome).toBe('skipped_exact');
+    expect(result.decisions[0]?.existingIndex).toBe(0);
+    expect(result.decisions[0]?.reason).toContain('auto-skipped');
+  });
+
+  it('marks fuzzy candidates with outcome "flagged_fuzzy" including similarity', () => {
+    const existingWithSimilar = [makeTx('2024-02-01', -2000, 'IMPS TRANSFER HDFC')];
+    const incoming = [makeTx('2024-02-01', -2000, 'IMPS TRANSFER HDFC BANK')];
+    const result = detectDuplicates(incoming, existingWithSimilar, 'acc-1');
+    const decision = result.decisions[0];
+    expect(decision?.outcome).toBe('flagged_fuzzy');
+    expect(decision?.similarity).toBeGreaterThan(0);
+    expect(decision?.existingIndex).toBe(0);
+    expect(decision?.reason).toContain('review');
+  });
+
+  it('each decision carries the computed fingerprint', () => {
+    const incoming = [makeTx('2024-01-03', -600, 'ONLINE PURCHASE')];
+    const result = detectDuplicates(incoming, existing, 'acc-1');
+    const decision = result.decisions[0];
+    expect(decision?.fingerprint.accountId).toBe('acc-1');
+    expect(decision?.fingerprint.transactionDate).toBe('2024-01-03');
+    expect(decision?.fingerprint.amount).toBe(-600);
+  });
+
+  it('returns empty decisions array when incoming is empty', () => {
+    const result = detectDuplicates([], existing, 'acc-1');
+    expect(result.decisions).toHaveLength(0);
+  });
+});
+
+describe('detectDuplicates — override flow', () => {
+  const existing = [
+    makeTx('2024-03-01', -5000, 'ATM WITHDRAWAL'),
+    makeTx('2024-03-02', 50000, 'SALARY CREDIT'),
+  ];
+
+  it('overrides an exact duplicate when its sourceReference is listed', () => {
+    const incoming = [makeTx('2024-03-01', -5000, 'ATM WITHDRAWAL', 'row-1')];
+    const result = detectDuplicates(incoming, existing, 'acc-1', {
+      overrideSourceRefs: ['row-1'],
+    });
+    expect(result.overridden).toHaveLength(1);
+    expect(result.unique).toHaveLength(1);
+    expect(result.exactDuplicates).toHaveLength(0);
+  });
+
+  it('marks overridden decisions with outcome "overridden"', () => {
+    const incoming = [makeTx('2024-03-01', -5000, 'ATM WITHDRAWAL', 'row-1')];
+    const result = detectDuplicates(incoming, existing, 'acc-1', {
+      overrideSourceRefs: ['row-1'],
+    });
+    expect(result.decisions[0]?.outcome).toBe('overridden');
+    expect(result.decisions[0]?.existingIndex).toBe(0);
+    expect(result.decisions[0]?.reason).toContain('overridden');
+  });
+
+  it('only overrides transactions whose sourceReference is in the override set', () => {
+    const incoming = [
+      makeTx('2024-03-01', -5000, 'ATM WITHDRAWAL', 'row-1'),
+      makeTx('2024-03-02', 50000, 'SALARY CREDIT', 'row-2'),
+    ];
+    const result = detectDuplicates(incoming, existing, 'acc-1', {
+      overrideSourceRefs: ['row-1'],
+    });
+    // row-1 overridden → in unique; row-2 not overridden → in exactDuplicates
+    expect(result.overridden).toHaveLength(1);
+    expect(result.exactDuplicates).toHaveLength(1);
+    expect(result.unique).toHaveLength(1);
+  });
+
+  it('does not override when sourceReference is absent from the transaction', () => {
+    // makeTx without sourceReference — override list has a ref but it cannot match
+    const incoming = [makeTx('2024-03-01', -5000, 'ATM WITHDRAWAL')];
+    const result = detectDuplicates(incoming, existing, 'acc-1', {
+      overrideSourceRefs: ['row-1'],
+    });
+    expect(result.overridden).toHaveLength(0);
+    expect(result.exactDuplicates).toHaveLength(1);
+  });
+
+  it('treats a non-duplicate as unique regardless of override list', () => {
+    const incoming = [makeTx('2024-03-10', -200, 'UNIQUE TX', 'row-99')];
+    const result = detectDuplicates(incoming, existing, 'acc-1', {
+      overrideSourceRefs: ['row-99'],
+    });
+    expect(result.unique).toHaveLength(1);
+    expect(result.overridden).toHaveLength(0);
+    expect(result.decisions[0]?.outcome).toBe('imported');
+  });
+
+  it('returns empty overridden list when no overrideSourceRefs are given', () => {
+    const incoming = [makeTx('2024-03-01', -5000, 'ATM WITHDRAWAL', 'row-1')];
+    const result = detectDuplicates(incoming, existing, 'acc-1');
+    expect(result.overridden).toHaveLength(0);
+    expect(result.exactDuplicates).toHaveLength(1);
+  });
+
+  it('returns empty overridden list when overrideSourceRefs is an empty array', () => {
+    const incoming = [makeTx('2024-03-01', -5000, 'ATM WITHDRAWAL', 'row-1')];
+    const result = detectDuplicates(incoming, existing, 'acc-1', { overrideSourceRefs: [] });
+    expect(result.overridden).toHaveLength(0);
   });
 });
