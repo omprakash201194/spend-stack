@@ -284,3 +284,12 @@ export interface ReviewQueueItem {
   /** Immutable, append-only audit trail. */
   auditTrail: ReviewAuditEntry[];
 }
+
+/**
+ * An in-memory store of ReviewQueueItems keyed by item ID.
+ * Follows the null-prototype dictionary pattern used throughout the codebase.
+ */
+export interface ReviewQueueStore {
+  /** Dictionary of items keyed by their ID. */
+  items: Record<string, ReviewQueueItem>;
+}
