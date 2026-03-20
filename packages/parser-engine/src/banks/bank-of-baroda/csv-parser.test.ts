@@ -11,6 +11,14 @@ const BOB_CSV = `Tran Date,Description,Ref No.,Debit Amount,Credit Amount,Balanc
 15-01-2024,UPI PAYMENT GROCERY,REF003,800.00,,94200.00
 20-01-2024,CHEQUE DEPOSIT,,,25000.00,119200.00`;
 
+// Realistic BOB export that includes account-info preamble rows before the
+// transaction header — a format produced by BOB Internet Banking.
+const BOB_WITH_PREAMBLE_CSV = `Account Number:1234567890
+Statement Period:01-01-2024 to 31-01-2024
+Tran Date,Description,Ref No.,Debit Amount,Credit Amount,Balance
+05-01-2024,NEFT SALARY CREDIT,REF001,,25000.00,75000.00
+12-01-2024,UPI GROCERY PAYMENT,REF002,1500.00,,73500.00`;
+
 const FOREIGN_CSV = `Date,Narration,Amount
 01/01/2024,SOME PAYMENT,500.00`;
 
@@ -26,6 +34,10 @@ describe('bankOfBarodaCsvParser.detect', () => {
   it('returns false for empty content', () => {
     expect(bankOfBarodaCsvParser.detect('')).toBe(false);
   });
+
+  it('detects a Bank of Baroda CSV with account-info preamble rows', () => {
+    expect(bankOfBarodaCsvParser.detect(BOB_WITH_PREAMBLE_CSV)).toBe(true);
+  });
 });
 
 describe('bankOfBarodaCsvParser.extract', () => {
@@ -38,6 +50,23 @@ describe('bankOfBarodaCsvParser.extract', () => {
   it('each extracted row has a source reference', () => {
     const rows = bankOfBarodaCsvParser.extract(BOB_CSV);
     rows.forEach((r) => expect(r.sourceReference).toMatch(/^row-\d+$/));
+  });
+
+  it('captures the raw line text', () => {
+    const rows = bankOfBarodaCsvParser.extract(BOB_CSV);
+    expect(rows[0]?.rawText).toContain('SALARY CREDIT');
+  });
+
+  it('extracts rows from a statement with account-info preamble', () => {
+    const rows = bankOfBarodaCsvParser.extract(BOB_WITH_PREAMBLE_CSV);
+    expect(rows.length).toBe(2);
+    expect(rows[0]?.rawText).toContain('SALARY');
+    expect(rows[1]?.rawText).toContain('GROCERY');
+  });
+
+  it('returns empty array when no header is found', () => {
+    expect(bankOfBarodaCsvParser.extract(FOREIGN_CSV)).toHaveLength(0);
+    expect(bankOfBarodaCsvParser.extract('')).toHaveLength(0);
   });
 });
 
@@ -60,6 +89,7 @@ describe('bankOfBarodaCsvParser.normalize', () => {
     const salary = txs.find((t) => t.description.includes('SALARY'));
     expect(salary?.signedAmount).toBeGreaterThan(0);
     expect(salary?.creditAmount).toBe(50000);
+    expect(salary?.debitAmount).toBeNull();
   });
 
   it('sets signedAmount negative for debits', () => {
@@ -68,6 +98,19 @@ describe('bankOfBarodaCsvParser.normalize', () => {
     const atm = txs.find((t) => t.description.includes('ATM'));
     expect(atm?.signedAmount).toBeLessThan(0);
     expect(atm?.debitAmount).toBe(5000);
+    expect(atm?.creditAmount).toBeNull();
+  });
+
+  it('captures balance when available', () => {
+    const rows = bankOfBarodaCsvParser.extract(BOB_CSV);
+    const txs = bankOfBarodaCsvParser.normalize(rows);
+    expect(txs[0]?.balanceIfAvailable).toBe(100000);
+  });
+
+  it('normalizes descriptions to upper case', () => {
+    const rows = bankOfBarodaCsvParser.extract(BOB_CSV);
+    const txs = bankOfBarodaCsvParser.normalize(rows);
+    txs.forEach((t) => expect(t.description).toBe(t.description.toUpperCase()));
   });
 
   it('sets currency to INR', () => {
@@ -89,6 +132,7 @@ describe('bankOfBarodaCsvParser.validate', () => {
       confidenceSummary: { totalRows: 0, highConfidence: 0, lowConfidence: 0, failed: 0 },
       debugMetadata: {},
     });
+    expect(result.confidenceSummary.totalRows).toBe(rows.length);
     expect(result.confidenceSummary.highConfidence).toBe(normalizedCandidates.length);
     expect(result.confidenceSummary.failed).toBe(0);
   });
@@ -105,6 +149,44 @@ describe('bankOfBarodaCsvParser.validate', () => {
       debugMetadata: {},
     });
     expect(result.parseErrors).toHaveLength(0);
+  });
+
+  it('emits a structured ParseError for a transaction missing date and amount', () => {
+    const badTx = {
+      date: '',
+      description: 'BAD ROW',
+      debitAmount: null,
+      creditAmount: null,
+      signedAmount: 0,
+      balanceIfAvailable: null,
+      currency: 'INR',
+      rawReference: '',
+      sourceReference: 'row-7',
+    };
+    const result = bankOfBarodaCsvParser.validate({
+      rawRows: [],
+      normalizedCandidates: [badTx],
+      parserWarnings: [],
+      parseErrors: [],
+      confidenceSummary: { totalRows: 0, highConfidence: 0, lowConfidence: 0, failed: 0 },
+      debugMetadata: {},
+    });
+    // Two separate errors emitted: one for missing date, one for missing amount
+    expect(result.parseErrors).toHaveLength(2);
+    const codes = result.parseErrors.map((e) => e.code);
+    expect(codes).toContain('missing_date');
+    expect(codes).toContain('missing_amount');
+    result.parseErrors.forEach((e) => {
+      expect(e.severity).toBe('error');
+      expect(e.sourceReference).toBe('row-7');
+    });
+  });
+
+  it('carries sourceReference through normalize and into validate errors', () => {
+    const rows = bankOfBarodaCsvParser.extract(BOB_CSV);
+    const normalizedCandidates = bankOfBarodaCsvParser.normalize(rows);
+    // Every normalized candidate should carry the sourceReference from its raw row
+    normalizedCandidates.forEach((tx) => expect(tx.sourceReference).toMatch(/^row-\d+$/));
   });
 });
 
