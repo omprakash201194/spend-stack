@@ -9,6 +9,11 @@ const MOCK_FLAGS: Record<FeatureFlagName, FeatureFlagValue> = {
   aiCategorisation: false,
   multiCurrency: false,
   verboseLogs: false,
+  insightsEnabled: false,
+  aiInsights: false,
+  pinUnlock: false,
+  familyPrivacyControls: false,
+  reviewQueue: false,
 };
 
 // ── buildDiagnosticsBundle ────────────────────────────────────────────────────

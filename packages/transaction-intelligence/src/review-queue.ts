@@ -265,16 +265,16 @@ export function getItemById(
 }
 
 /**
- * Returns all unresolved items in the store (no `resolvedAt`), in insertion
- * order.
+ * Returns all unresolved items in the store (no `resolvedAt`), in the
+ * enumeration order of `store.items`.
  */
 export function listPendingItems(store: ReviewQueueStore): ReviewQueueItem[] {
   return Object.values(store.items).filter((item) => item.resolvedAt === undefined);
 }
 
 /**
- * Returns all resolved items in the store (has `resolvedAt`), in insertion
- * order.
+ * Returns all resolved items in the store (has `resolvedAt`), in the
+ * enumeration order of `store.items`.
  */
 export function listResolvedItems(store: ReviewQueueStore): ReviewQueueItem[] {
   return Object.values(store.items).filter((item) => item.resolvedAt !== undefined);
