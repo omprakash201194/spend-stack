@@ -120,3 +120,61 @@ export function markDeleted(file: StatementFileRecord): StatementFileRecord {
 export function markSkipped(file: StatementFileRecord): StatementFileRecord {
   return { ...file, deletionStatus: 'skipped', retentionPolicy: 'keep', deleteAfterAt: null };
 }
+
+// ---------------------------------------------------------------------------
+// User-facing retention notice
+// ---------------------------------------------------------------------------
+
+/**
+ * A user-facing notification explaining the file retention policy
+ * for a specific statement upload.
+ */
+export interface RetentionNotice {
+  /** Short heading for the notice. */
+  title: string;
+  /** Full human-readable explanation of when the file will be removed and what is kept. */
+  body: string;
+  /** The scheduled deletion timestamp, or null when the file is retained indefinitely. */
+  deleteAfterAt: Date | null;
+  /** The configured retention period in days (for display purposes). */
+  retentionDays: number;
+}
+
+/**
+ * Builds a user-facing retention notice for an uploaded statement file.
+ *
+ * The notice explains:
+ * - The source file is stored temporarily (for `retentionDays` days).
+ * - The file will be deleted automatically on the computed date.
+ * - All imported transaction data is kept permanently after cleanup.
+ *
+ * @param file          The statement file record.
+ * @param retentionDays Retention period in days used for display copy
+ *                      (defaults to DEFAULT_RETENTION_DAYS).
+ */
+export function buildRetentionNotice(
+  file: StatementFileRecord,
+  retentionDays: number = DEFAULT_RETENTION_DAYS,
+): RetentionNotice {
+  if (file.retentionPolicy === 'keep') {
+    return {
+      title: 'File kept indefinitely',
+      body: 'This statement file is set to be kept and will not be removed automatically. Your imported transactions are always stored separately and remain safe.',
+      deleteAfterAt: null,
+      retentionDays,
+    };
+  }
+
+  const deleteAt = file.deleteAfterAt;
+  const dateStr = deleteAt
+    ? deleteAt.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+    : 'an upcoming date';
+  const dayLabel = retentionDays === 1 ? 'day' : 'days';
+
+  return {
+    title: `Source file removed after ${retentionDays} ${dayLabel}`,
+    body: `To protect your privacy, the uploaded statement file will be automatically deleted on ${dateStr}. Your imported transactions are stored permanently and will not be affected by this cleanup.`,
+    deleteAfterAt: deleteAt,
+    retentionDays,
+  };
+}
