@@ -125,6 +125,27 @@ export type {
 } from './import-job.js';
 
 export {
+  DEFAULT_RETENTION_DAYS,
+  createStatementFileRecord,
+  computeDeleteAfterAt,
+  isExpired,
+  findExpiredFiles,
+  markDeleted,
+  markDeletionFailed,
+  markSkipped,
+  runCleanup,
+  reconcileOnStartup,
+} from './statement-file-lifecycle.js';
+export type {
+  RetentionPolicy,
+  DeletionStatus,
+  StatementFileRecord,
+  FileDeleter,
+  RunCleanupOptions,
+  CleanupResult,
+} from './statement-file-lifecycle.js';
+
+export {
   computeBalanceSummary,
   computeCashflowSummary,
   createInsightConsent,
