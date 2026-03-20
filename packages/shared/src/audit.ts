@@ -43,6 +43,11 @@ export type AuditEventType =
   | 'import.completed'
   | 'import.failed'
   | 'import.cancelled'
+  // File lifecycle events
+  | 'file.retained'
+  | 'file.deleted'
+  | 'file.deletion_failed'
+  | 'file.cleanup_run_completed'
   // Transaction events
   | 'transaction.reviewed'
   | 'transaction.categorized'
