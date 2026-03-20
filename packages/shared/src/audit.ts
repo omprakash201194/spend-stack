@@ -52,7 +52,9 @@ export type AuditEventType =
   | 'insight.consent_revoked'
   | 'insight.balance_summary_computed'
   | 'insight.cashflow_summary_computed'
-  | 'insight.ai_insights_requested';
+  | 'insight.ai_insights_requested'
+  // Traceability events
+  | 'trace.queried';
 
 /**
  * A single audit event.
