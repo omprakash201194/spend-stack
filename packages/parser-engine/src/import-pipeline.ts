@@ -317,12 +317,20 @@ export function runImportPipeline(input: ImportPipelineInput): ImportPipelineRes
   // Build the skipped summary: one record per exact duplicate that was NOT
   // overridden, giving callers everything needed to present a user-facing
   // skip summary and offer an override path.
-  const skippedSummary: SkippedRecord[] = duplicates.exactDuplicates.map((dup) => ({
-    transaction: dup.incoming,
-    reason: 'exact_duplicate',
-    existingIndex: dup.existingIndex,
-    fingerprint: computeFingerprint(dup.incoming, accountId),
-  }));
+  // Reuse the fingerprint already computed during duplicate detection
+  // (stored in the corresponding `skipped_exact` decision) to avoid
+  // recomputing it here and to stay consistent with detector logic.
+  const skippedSummary: SkippedRecord[] = duplicates.exactDuplicates.map((dup) => {
+    const matchingDecision = duplicates.decisions?.find(
+      (d) => d.outcome === 'skipped_exact' && d.incoming === dup.incoming,
+    );
+    return {
+      transaction: dup.incoming,
+      reason: 'exact_duplicate',
+      existingIndex: dup.existingIndex,
+      fingerprint: matchingDecision?.fingerprint ?? computeFingerprint(dup.incoming, accountId),
+    };
+  });
 
   return {
     statementFile,
@@ -339,13 +347,13 @@ export function runImportPipeline(input: ImportPipelineInput): ImportPipelineRes
     reviewRequired,
     sourceTraces,
     skippedSummary,
-    overriddenTransactions: duplicates.overridden,
+    overriddenTransactions: duplicates.overridden ?? [],
     metrics: {
       totalRowsDetected: rawRows.length,
       rowsParsed: normalizedCandidates.length,
       rowsFlaggedForReview: reviewItems.length,
       duplicateRowsSkipped: duplicates.exactDuplicates.length,
-      duplicateRowsOverridden: duplicates.overridden.length,
+      duplicateRowsOverridden: duplicates.overridden?.length ?? 0,
     },
   };
 }

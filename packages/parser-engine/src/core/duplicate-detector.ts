@@ -124,14 +124,22 @@ export interface DuplicateDetectionResult {
    * Transactions that were exact duplicates but the user explicitly chose
    * to import anyway (via `overrideSourceRefs`).  These are also included
    * in `unique` so they flow through the rest of the pipeline.
+   *
+   * Optional so that downstream code constructing `DuplicateDetectionResult`
+   * objects directly (e.g. mocks or early-return stubs) does not break when
+   * the field is absent.
    */
-  overridden: NormalizedTransaction[];
+  overridden?: NormalizedTransaction[];
   /**
    * One decision record per incoming transaction, preserving the full
    * reasoning behind each classification.  Use this for audit trails,
    * user-facing summaries, and debugging.
+   *
+   * Optional so that downstream code constructing `DuplicateDetectionResult`
+   * objects directly (e.g. mocks or early-return stubs) does not break when
+   * the field is absent.
    */
-  decisions: DuplicateDecision[];
+  decisions?: DuplicateDecision[];
 }
 
 // ---------------------------------------------------------------------------
