@@ -166,3 +166,14 @@ export type {
   InsightConsent,
   CreateInsightConsentParams,
 } from './insights.js';
+
+export {
+  buildTraceStore,
+  getTraceForTransaction,
+  getTracesForFile,
+  getTraceBySourceRef,
+  hasTraceData,
+  getImportJobIds,
+  formatTraceForDisplay,
+} from './source-traceability.js';
+export type { SourceTraceRecord, TraceStore } from './source-traceability.js';
