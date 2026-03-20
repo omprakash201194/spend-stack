@@ -36,6 +36,9 @@ export type {
   ExactDuplicate,
   FuzzyCandidate,
   DuplicateDetectionResult,
+  DuplicateDecisionOutcome,
+  DuplicateDecision,
+  DuplicateDetectionOptions,
 } from './core/duplicate-detector.js';
 
 // File lifecycle / retention
@@ -76,4 +79,5 @@ export type {
   ImportPipelineInput,
   ImportPipelineResult,
   ReviewQueueItem,
+  SkippedRecord,
 } from './import-pipeline.js';

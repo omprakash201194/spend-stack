@@ -16,13 +16,23 @@
 import type { FileType, NormalizedTransaction, RawStatementRow, ImportJobStatus, TransactionSourceTrace, ParseError } from './core/types.js';
 import { resolveParser } from './parser-registry.js';
 import { detectDuplicates } from './core/duplicate-detector.js';
-import type { DuplicateDetectionResult } from './core/duplicate-detector.js';
+import type { DuplicateDetectionResult, DuplicateFingerprint } from './core/duplicate-detector.js';
+import { computeFingerprint } from './core/duplicate-detector.js';
 import {
   createStatementFileRecord,
   type StatementFileRecord,
   type RetentionPolicy,
 } from './core/file-retention.js';
 import type { ReviewQueueReason } from './core/types.js';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Returns an empty DuplicateDetectionResult for use in early-return paths. */
+function emptyDuplicateDetectionResult(): DuplicateDetectionResult {
+  return { unique: [], exactDuplicates: [], fuzzyCandidates: [], overridden: [], decisions: [] };
+}
 
 // ---------------------------------------------------------------------------
 // Input / output types
@@ -43,6 +53,13 @@ export interface ImportPipelineInput {
   existingTransactions?: NormalizedTransaction[];
   /** Retention policy for the uploaded file (default: "auto_delete"). */
   retentionPolicy?: RetentionPolicy;
+  /**
+   * `NormalizedTransaction.sourceReference` values for transactions that were
+   * detected as exact duplicates but the user explicitly chose to import
+   * anyway.  When provided, those transactions bypass the auto-skip logic and
+   * are included in the final `normalizedTransactions` list.
+   */
+  overrideExactDuplicates?: string[];
 }
 
 /** A single item queued for human review. */
@@ -51,6 +68,22 @@ export interface ReviewQueueItem {
   reason: ReviewQueueReason;
   transaction: NormalizedTransaction | null;
   rawRow: RawStatementRow;
+}
+
+/**
+ * A record describing a transaction that was skipped during import due to
+ * duplicate detection.  Exposed so that callers can present a transparent
+ * skip summary to the user and offer an override path.
+ */
+export interface SkippedRecord {
+  /** The transaction that was skipped. */
+  transaction: NormalizedTransaction;
+  /** Why this record was skipped. */
+  reason: 'exact_duplicate';
+  /** Zero-based index of the matching transaction in the existing set. */
+  existingIndex: number;
+  /** The fingerprint that caused the match (useful for debugging). */
+  fingerprint: DuplicateFingerprint;
 }
 
 export interface ImportPipelineResult {
@@ -79,11 +112,25 @@ export interface ImportPipelineResult {
    * any transaction back to the exact raw row and source file it came from.
    */
   sourceTraces: TransactionSourceTrace[];
+  /**
+   * One record per transaction that was auto-skipped due to exact duplicate
+   * detection.  Each entry carries the fingerprint and the index of the
+   * matching existing transaction so the UI can present a transparent
+   * skip summary and offer an override path via `overrideExactDuplicates`.
+   */
+  skippedSummary: SkippedRecord[];
+  /**
+   * Transactions that were exact duplicates but were force-imported because
+   * their `sourceReference` appeared in `overrideExactDuplicates`.
+   */
+  overriddenTransactions: NormalizedTransaction[];
   metrics: {
     totalRowsDetected: number;
     rowsParsed: number;
     rowsFlaggedForReview: number;
     duplicateRowsSkipped: number;
+    /** Count of transactions imported despite being exact duplicates. */
+    duplicateRowsOverridden: number;
   };
 }
 
@@ -110,6 +157,7 @@ export function runImportPipeline(input: ImportPipelineInput): ImportPipelineRes
     uploadedByUserId: _uploadedByUserId,
     existingTransactions = [],
     retentionPolicy = 'auto_delete',
+    overrideExactDuplicates = [],
   } = input;
 
   // ------------------------------------------------------------------
@@ -131,7 +179,7 @@ export function runImportPipeline(input: ImportPipelineInput): ImportPipelineRes
       status: 'failed',
       rawRows: [],
       normalizedTransactions: [],
-      duplicates: { unique: [], exactDuplicates: [], fuzzyCandidates: [] },
+      duplicates: emptyDuplicateDetectionResult(),
       reviewItems: [],
       parserWarnings: [noParserMsg],
       parseErrors: [
@@ -143,11 +191,14 @@ export function runImportPipeline(input: ImportPipelineInput): ImportPipelineRes
       ],
       reviewRequired: false,
       sourceTraces: [],
+      skippedSummary: [],
+      overriddenTransactions: [],
       metrics: {
         totalRowsDetected: 0,
         rowsParsed: 0,
         rowsFlaggedForReview: 0,
         duplicateRowsSkipped: 0,
+        duplicateRowsOverridden: 0,
       },
     };
   }
@@ -178,7 +229,9 @@ export function runImportPipeline(input: ImportPipelineInput): ImportPipelineRes
   // ------------------------------------------------------------------
   // Stage 5: Duplicate Detection
   // ------------------------------------------------------------------
-  const duplicates = detectDuplicates(normalizedCandidates, existingTransactions, accountId);
+  const duplicates = detectDuplicates(normalizedCandidates, existingTransactions, accountId, {
+    overrideSourceRefs: overrideExactDuplicates,
+  });
 
   // ------------------------------------------------------------------
   // Stage 6: Transfer Detection (placeholder — Epic 4)
@@ -261,6 +314,16 @@ export function runImportPipeline(input: ImportPipelineInput): ImportPipelineRes
     };
   });
 
+  // Build the skipped summary: one record per exact duplicate that was NOT
+  // overridden, giving callers everything needed to present a user-facing
+  // skip summary and offer an override path.
+  const skippedSummary: SkippedRecord[] = duplicates.exactDuplicates.map((dup) => ({
+    transaction: dup.incoming,
+    reason: 'exact_duplicate',
+    existingIndex: dup.existingIndex,
+    fingerprint: computeFingerprint(dup.incoming, accountId),
+  }));
+
   return {
     statementFile,
     importJobId: fileId,
@@ -275,11 +338,14 @@ export function runImportPipeline(input: ImportPipelineInput): ImportPipelineRes
     parseErrors: validated.parseErrors,
     reviewRequired,
     sourceTraces,
+    skippedSummary,
+    overriddenTransactions: duplicates.overridden,
     metrics: {
       totalRowsDetected: rawRows.length,
       rowsParsed: normalizedCandidates.length,
       rowsFlaggedForReview: reviewItems.length,
       duplicateRowsSkipped: duplicates.exactDuplicates.length,
+      duplicateRowsOverridden: duplicates.overridden.length,
     },
   };
 }
