@@ -127,6 +127,8 @@ export type {
 export {
   computeBalanceSummary,
   computeCashflowSummary,
+  computeOverallBalanceSummary,
+  computeOverallCashflowSummary,
   createInsightConsent,
   revokeInsightConsent,
   hasInsightConsent,
@@ -135,10 +137,15 @@ export {
 } from './insights.js';
 export type {
   InsightTransaction,
+  SummaryPeriod,
   BalanceSummary,
   BalanceSummaryOptions,
   CashflowSummary,
   CashflowSummaryOptions,
+  OverallBalanceSummary,
+  OverallBalanceSummaryOptions,
+  OverallCashflowSummary,
+  OverallCashflowSummaryOptions,
   InsightConsentSchemaVersion,
   InsightConsentScope,
   InsightDataScope,
