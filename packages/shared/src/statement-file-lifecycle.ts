@@ -20,11 +20,34 @@ import { createAuditEvent } from './audit.js';
 import type { AuditEvent } from './audit.js';
 
 // ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+function randomHex(bytes: number): string {
+  const buffer = new Uint8Array(bytes);
+  if (globalThis.crypto?.getRandomValues) {
+    globalThis.crypto.getRandomValues(buffer);
+  } else {
+    for (let i = 0; i < buffer.length; i += 1) {
+      buffer[i] = Math.floor(Math.random() * 256);
+    }
+  }
+  let out = '';
+  for (const value of buffer) {
+    out += value.toString(16).padStart(2, '0');
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 /** Number of days to retain a statement file before automatic deletion. */
 export const DEFAULT_RETENTION_DAYS = 7;
+
+/** Milliseconds in a single day — used for UTC-safe retention window arithmetic. */
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -99,6 +122,12 @@ export function createStatementFileRecord(
   uploadedAt: string = new Date().toISOString(),
   retentionDays: number = DEFAULT_RETENTION_DAYS,
 ): StatementFileRecord {
+  if (Number.isNaN(new Date(uploadedAt).getTime())) {
+    throw new RangeError(`Invalid uploadedAt timestamp: "${uploadedAt}"`);
+  }
+  if (!Number.isFinite(retentionDays) || retentionDays <= 0) {
+    throw new RangeError(`retentionDays must be a positive finite number, got: ${retentionDays}`);
+  }
   return {
     id,
     fileName,
@@ -132,9 +161,16 @@ export function computeDeleteAfterAt(
   uploadedAt: string,
   retentionDays: number = DEFAULT_RETENTION_DAYS,
 ): string {
-  const d = new Date(uploadedAt);
-  d.setDate(d.getDate() + retentionDays);
-  return d.toISOString();
+  const uploadedDate = new Date(uploadedAt);
+  if (Number.isNaN(uploadedDate.getTime())) {
+    throw new RangeError(`Invalid uploadedAt timestamp: "${uploadedAt}"`);
+  }
+  if (!Number.isFinite(retentionDays) || retentionDays <= 0) {
+    throw new RangeError(`retentionDays must be a positive finite number, got: ${retentionDays}`);
+  }
+  const retentionMs = retentionDays * MS_PER_DAY;
+  const deleteAfter = new Date(uploadedDate.getTime() + retentionMs);
+  return deleteAfter.toISOString();
 }
 
 /**
@@ -392,15 +428,17 @@ async function _executeCleanup(
   }
 
   // Emit a summary event for the entire run.
+  const cleanupRunId = correlationId ?? randomHex(8);
   auditEvents.push(
     createAuditEvent({
       type: 'file.cleanup_run_completed',
       actorId,
       resourceType: 'cleanup_run',
-      resourceId: now.toISOString(),
+      resourceId: cleanupRunId,
       ...(correlationId !== undefined ? { correlationId } : {}),
       metadata: {
         trigger,
+        evaluatedAt: now.toISOString(),
         eligibleCount: expired.length,
         deletedCount,
         failedCount,

@@ -49,8 +49,24 @@ describe('computeDeleteAfterAt', () => {
 
   it('returns an ISO 8601 UTC string', () => {
     const result = computeDeleteAfterAt(UPLOADED_AT);
-    expect(() => new Date(result)).not.toThrow();
-    expect(result).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(Number.isNaN(new Date(result).getTime())).toBe(false);
+    expect(result).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  });
+
+  it('throws RangeError for an invalid uploadedAt', () => {
+    expect(() => computeDeleteAfterAt('not-a-date')).toThrow(RangeError);
+  });
+
+  it('throws RangeError for zero retentionDays', () => {
+    expect(() => computeDeleteAfterAt(UPLOADED_AT, 0)).toThrow(RangeError);
+  });
+
+  it('throws RangeError for negative retentionDays', () => {
+    expect(() => computeDeleteAfterAt(UPLOADED_AT, -1)).toThrow(RangeError);
+  });
+
+  it('throws RangeError for NaN retentionDays', () => {
+    expect(() => computeDeleteAfterAt(UPLOADED_AT, NaN)).toThrow(RangeError);
   });
 });
 
@@ -90,6 +106,18 @@ describe('createStatementFileRecord', () => {
   it('respects a custom retentionDays value', () => {
     const record = createStatementFileRecord('f-4', 'file.csv', 'auto_delete', UPLOADED_AT, 14);
     expect(record.deleteAfterAt).toBe('2024-01-15T10:00:00.000Z');
+  });
+
+  it('throws RangeError for an invalid uploadedAt', () => {
+    expect(() => createStatementFileRecord('f-5', 'file.csv', 'auto_delete', 'bad-date')).toThrow(RangeError);
+  });
+
+  it('throws RangeError for zero retentionDays', () => {
+    expect(() => createStatementFileRecord('f-6', 'file.csv', 'auto_delete', UPLOADED_AT, 0)).toThrow(RangeError);
+  });
+
+  it('throws RangeError for negative retentionDays', () => {
+    expect(() => createStatementFileRecord('f-7', 'file.csv', 'auto_delete', UPLOADED_AT, -3)).toThrow(RangeError);
   });
 });
 
@@ -336,6 +364,23 @@ describe('runCleanup', () => {
     expect(summary?.metadata['eligibleCount']).toBe(2);
     expect(summary?.metadata['deletedCount']).toBe(2);
     expect(summary?.metadata['failedCount']).toBe(0);
+    expect(summary?.metadata['evaluatedAt']).toBe(RUN_NOW.toISOString());
+    // resourceId should be a non-empty hex string, not a raw timestamp
+    expect(typeof summary?.resourceId).toBe('string');
+    expect(summary?.resourceId.length).toBeGreaterThan(0);
+    expect(summary?.resourceId).not.toBe(RUN_NOW.toISOString());
+  });
+
+  it('uses a hex resourceId (not a timestamp) in the summary event when no correlationId', async () => {
+    const files = [
+      createStatementFileRecord('f-hex', 'hex.csv', 'auto_delete', OLD_UPLOAD),
+    ];
+    const deleter: FileDeleter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await runCleanup(files, deleter, { now: RUN_NOW });
+
+    const summary = result.auditEvents.find((e) => e.type === 'file.cleanup_run_completed');
+    expect(summary?.resourceId).toMatch(/^[0-9a-f]+$/);
   });
 
   it('is idempotent — already-deleted files are not passed to deleter', async () => {
