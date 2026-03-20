@@ -50,11 +50,13 @@ export {
   findExpiredFiles,
   markDeleted,
   markSkipped,
+  buildRetentionNotice,
 } from './core/file-retention.js';
 export type {
   RetentionPolicy,
   DeletionStatus,
   StatementFileRecord,
+  RetentionNotice,
 } from './core/file-retention.js';
 
 // Bank parsers
