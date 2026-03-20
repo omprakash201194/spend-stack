@@ -22,9 +22,6 @@ import { parseDate, parseAmount, normalizeDescription, parseCsvRow, splitLines }
 const PARSER_ID = 'icici-csv-v1';
 const PARSER_VERSION = '1.0.0';
 
-// Expected header columns (lower-cased for flexible matching)
-const REQUIRED_HEADERS = ['transaction date', 'description', 'debit', 'credit', 'balance'];
-
 /**
  * Maximum number of leading lines to scan when searching for the transaction
  * header row.  ICICI CSV exports may include account-number / date-range rows
@@ -63,12 +60,16 @@ function resolveColumns(headers: string[]): ColumnMap | null {
  * Scans the first HEADER_SEARCH_LIMIT lines of `lines` for the ICICI
  * transaction-table header.  Returns the index of that line, or -1 when not
  * found.
+ *
+ * Uses resolveColumns() for matching so that detect() and extract() rely on
+ * identical column-mapping rules — preventing detect() from returning true for
+ * a line that extract() cannot actually map.
  */
 function findHeaderLineIndex(lines: string[]): number {
   const limit = Math.min(lines.length, HEADER_SEARCH_LIMIT);
   for (let i = 0; i < limit; i++) {
-    const headers = parseCsvRow(lines[i]!).map((h) => h.toLowerCase().trim());
-    if (REQUIRED_HEADERS.every((req) => headers.some((h) => h.includes(req)))) {
+    const headers = parseCsvRow(lines[i]!);
+    if (resolveColumns(headers) !== null) {
       return i;
     }
   }
