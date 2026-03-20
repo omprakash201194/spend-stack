@@ -7,6 +7,11 @@
  * Date format: DD/MM/YYYY
  * Amount format: plain decimal, commas allowed (e.g. "1,00,000.00")
  *
+ * Real ICICI Internet Banking CSV exports may include up to a few rows of
+ * account metadata (account number, date range, etc.) before the transaction
+ * header row.  Both detect() and extract() scan the first
+ * HEADER_SEARCH_LIMIT lines so these preamble rows are handled gracefully.
+ *
  * Parser ID  : icici-csv-v1
  * Parser Ver : 1.0.0
  */
@@ -17,8 +22,12 @@ import { parseDate, parseAmount, normalizeDescription, parseCsvRow, splitLines }
 const PARSER_ID = 'icici-csv-v1';
 const PARSER_VERSION = '1.0.0';
 
-// Expected header columns (lower-cased for flexible matching)
-const REQUIRED_HEADERS = ['transaction date', 'description', 'debit', 'credit', 'balance'];
+/**
+ * Maximum number of leading lines to scan when searching for the transaction
+ * header row.  ICICI CSV exports may include account-number / date-range rows
+ * before the actual column headers.
+ */
+const HEADER_SEARCH_LIMIT = 5;
 
 // Column indices after parsing the header row
 interface ColumnMap {
@@ -47,6 +56,26 @@ function resolveColumns(headers: string[]): ColumnMap | null {
   return { transactionDate, description, refNo: refNo === -1 ? -1 : refNo, debit, credit, balance };
 }
 
+/**
+ * Scans the first HEADER_SEARCH_LIMIT lines of `lines` for the ICICI
+ * transaction-table header.  Returns the index of that line, or -1 when not
+ * found.
+ *
+ * Uses resolveColumns() for matching so that detect() and extract() rely on
+ * identical column-mapping rules — preventing detect() from returning true for
+ * a line that extract() cannot actually map.
+ */
+function findHeaderLineIndex(lines: string[]): number {
+  const limit = Math.min(lines.length, HEADER_SEARCH_LIMIT);
+  for (let i = 0; i < limit; i++) {
+    const headers = parseCsvRow(lines[i]!);
+    if (resolveColumns(headers) !== null) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 export const iciciBankCsvParser: ParserDefinition = {
   parserId: PARSER_ID,
   bankName: 'icici',
@@ -55,23 +84,21 @@ export const iciciBankCsvParser: ParserDefinition = {
 
   detect(content: string): boolean {
     const lines = splitLines(content);
-    if (lines.length === 0) return false;
-    const headerLine = lines[0]!;
-    const headers = parseCsvRow(headerLine).map((h) => h.toLowerCase().trim());
-    return REQUIRED_HEADERS.every((req) => headers.some((h) => h.includes(req)));
+    return findHeaderLineIndex(lines) !== -1;
   },
 
   extract(content: string): RawStatementRow[] {
     const lines = splitLines(content);
-    if (lines.length < 2) return [];
+    const headerIdx = findHeaderLineIndex(lines);
+    if (headerIdx === -1) return [];
 
-    const headers = parseCsvRow(lines[0]!);
+    const headers = parseCsvRow(lines[headerIdx]!);
     const cols = resolveColumns(headers);
     if (!cols) return [];
 
     const rows: RawStatementRow[] = [];
 
-    for (let i = 1; i < lines.length; i++) {
+    for (let i = headerIdx + 1; i < lines.length; i++) {
       const line = lines[i]!;
       const fields = parseCsvRow(line);
 
