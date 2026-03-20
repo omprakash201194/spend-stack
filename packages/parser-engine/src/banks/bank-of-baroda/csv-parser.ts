@@ -44,8 +44,8 @@ function resolveColumns(headers: string[]): ColumnMap | null {
   const tranDate = lower.findIndex((h) => h.includes('tran date') || h.includes('transaction date'));
   const description = lower.findIndex((h) => h.includes('description') || h.includes('narration') || h.includes('particulars'));
   const refNo = lower.findIndex((h) => h.includes('ref') || h.includes('cheque'));
-  const debitAmount = lower.findIndex((h) => h.includes('debit'));
-  const creditAmount = lower.findIndex((h) => h.includes('credit'));
+  const debitAmount = lower.findIndex((h) => h.includes('debit amount'));
+  const creditAmount = lower.findIndex((h) => h.includes('credit amount'));
   const balance = lower.findIndex((h) => h === 'balance' || h.includes('closing balance'));
 
   if ([tranDate, description, debitAmount, creditAmount, balance].some((i) => i === -1)) {

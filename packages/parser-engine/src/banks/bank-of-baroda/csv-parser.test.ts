@@ -19,6 +19,10 @@ Tran Date,Description,Ref No.,Debit Amount,Credit Amount,Balance
 05-01-2024,NEFT SALARY CREDIT,REF001,,25000.00,75000.00
 12-01-2024,UPI GROCERY PAYMENT,REF002,1500.00,,73500.00`;
 
+// CSV that mimics ICICI columns (bare "Debit"/"Credit", no "Amount") — BOB must not claim it
+const ICICI_LIKE_CSV = `Transaction Date,Value Date,Description,Ref No./Cheque No.,Debit,Credit,Balance
+05/01/2024,05/01/2024,SALARY CREDIT,REF001,,50000.00,100000.00`;
+
 const FOREIGN_CSV = `Date,Narration,Amount
 01/01/2024,SOME PAYMENT,500.00`;
 
@@ -29,6 +33,10 @@ describe('bankOfBarodaCsvParser.detect', () => {
 
   it('does not detect an unrelated CSV', () => {
     expect(bankOfBarodaCsvParser.detect(FOREIGN_CSV)).toBe(false);
+  });
+
+  it('does not detect a CSV with bare Debit/Credit columns (e.g. ICICI format)', () => {
+    expect(bankOfBarodaCsvParser.detect(ICICI_LIKE_CSV)).toBe(false);
   });
 
   it('returns false for empty content', () => {
@@ -182,11 +190,29 @@ describe('bankOfBarodaCsvParser.validate', () => {
     });
   });
 
-  it('carries sourceReference through normalize and into validate errors', () => {
+  it('carries sourceReference from extract through normalize and into validate errors', () => {
     const rows = bankOfBarodaCsvParser.extract(BOB_CSV);
     const normalizedCandidates = bankOfBarodaCsvParser.normalize(rows);
     // Every normalized candidate should carry the sourceReference from its raw row
     normalizedCandidates.forEach((tx) => expect(tx.sourceReference).toMatch(/^row-\d+$/));
+
+    // Inject a candidate with a known sourceReference but missing date to trigger a
+    // validate() error — verifying that sourceReference propagates into ParseError
+    const badTx = {
+      ...normalizedCandidates[0]!,
+      date: '',
+      sourceReference: 'row-99',
+    };
+    const result = bankOfBarodaCsvParser.validate({
+      rawRows: rows,
+      normalizedCandidates: [badTx],
+      parserWarnings: [],
+      parseErrors: [],
+      confidenceSummary: { totalRows: 0, highConfidence: 0, lowConfidence: 0, failed: 0 },
+      debugMetadata: {},
+    });
+    const dateError = result.parseErrors.find((e) => e.code === 'missing_date');
+    expect(dateError?.sourceReference).toBe('row-99');
   });
 });
 
