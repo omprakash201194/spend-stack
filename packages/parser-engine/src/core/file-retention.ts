@@ -165,16 +165,25 @@ export function buildRetentionNotice(
     };
   }
 
-  const deleteAt = file.deleteAfterAt;
-  const dateStr = deleteAt
-    ? deleteAt.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
-    : 'an upcoming date';
-  const dayLabel = retentionDays === 1 ? 'day' : 'days';
+  const deleteAt = file.deleteAfterAt ?? computeDeleteAfterAt(file.uploadedAt, retentionDays);
+  const effectiveRetentionDays = Math.max(
+    1,
+    Math.round(
+      (deleteAt.getTime() - file.uploadedAt.getTime()) /
+        (1000 * 60 * 60 * 24),
+    ),
+  );
+  const dateStr = deleteAt.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+  const dayLabel = effectiveRetentionDays === 1 ? 'day' : 'days';
 
   return {
-    title: `Source file removed after ${retentionDays} ${dayLabel}`,
+    title: `Source file removed after ${effectiveRetentionDays} ${dayLabel}`,
     body: `To protect your privacy, the uploaded statement file will be automatically deleted on ${dateStr}. Your imported transactions are stored permanently and will not be affected by this cleanup.`,
     deleteAfterAt: deleteAt,
-    retentionDays,
+    retentionDays: effectiveRetentionDays,
   };
 }

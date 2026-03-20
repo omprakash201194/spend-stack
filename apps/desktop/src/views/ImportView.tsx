@@ -355,7 +355,7 @@ function ImportView() {
           {/* Retention notice — shown once after each successful import */}
           {retentionNotice && (
             <div className="import-retention-notice" role="note" aria-label="File retention information">
-              <span className="import-retention-notice__icon">🗂</span>
+              <span className="import-retention-notice__icon" aria-hidden="true">🗂</span>
               <div className="import-retention-notice__content">
                 <strong className="import-retention-notice__title">{retentionNotice.title}</strong>
                 <p className="import-retention-notice__body">{retentionNotice.body}</p>
