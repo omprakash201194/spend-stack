@@ -234,3 +234,14 @@ export interface ReviewQueueItem {
   /** Immutable, append-only audit trail. */
   auditTrail: ReviewAuditEntry[];
 }
+
+/**
+ * An in-memory store of review queue items, keyed by item ID.
+ *
+ * All store mutation helpers return a new `ReviewQueueStore`; the original
+ * is never mutated.  Persistence is the caller's responsibility.
+ */
+export interface ReviewQueueStore {
+  /** All review queue items, keyed by item ID. */
+  readonly items: Readonly<Record<string, ReviewQueueItem>>;
+}

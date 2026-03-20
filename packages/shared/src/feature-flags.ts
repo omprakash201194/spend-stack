@@ -27,6 +27,8 @@ export const FEATURE_FLAGS = {
   pinUnlock: false,
   /** Enable relationship-based privacy controls inside a family workspace. */
   familyPrivacyControls: false,
+  /** Enable the review queue for low-confidence transactions. */
+  reviewQueue: false,
 } as const;
 
 export type FeatureFlagName = keyof typeof FEATURE_FLAGS;

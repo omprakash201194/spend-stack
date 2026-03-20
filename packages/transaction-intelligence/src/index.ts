@@ -24,6 +24,7 @@ export type {
   ReviewResolution,
   ReviewAuditEntry,
   ReviewQueueItem,
+  ReviewQueueStore,
 } from './types.js';
 
 // Normalization
@@ -55,5 +56,12 @@ export {
   createReviewItem,
   resolveReviewItem,
   buildReviewQueue,
+  editReviewItem,
+  createReviewQueueStore,
+  addItemToStore,
+  getItemById,
+  listPendingItems,
+  listResolvedItems,
+  resolveItemInStore,
 } from './review-queue.js';
-export type { ReviewQueueOptions } from './review-queue.js';
+export type { ReviewQueueOptions, EditReviewItemOptions } from './review-queue.js';
