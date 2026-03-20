@@ -39,7 +39,12 @@ type FlagOverrides = Partial<Record<FeatureFlagName, FeatureFlagValue>>;
  * Returns an empty object if the variable is absent or malformed.
  */
 function parseEnvFlags(): FlagOverrides {
-  const raw = process.env['SPENDSTACK_FLAGS'];
+  const raw =
+    typeof process !== 'undefined' &&
+    typeof process.env !== 'undefined' &&
+    process.env !== undefined
+      ? process.env['SPENDSTACK_FLAGS']
+      : undefined;
   if (!raw) return {};
   try {
     const parsed: unknown = JSON.parse(raw);

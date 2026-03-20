@@ -10,7 +10,24 @@
  * clock injection, and ID generation are the caller's responsibility.
  */
 
-import { randomBytes } from 'crypto';
+function randomHex(bytes: number): string {
+  const buffer = new Uint8Array(bytes);
+  if (globalThis.crypto?.getRandomValues) {
+    globalThis.crypto.getRandomValues(buffer);
+  } else {
+    // Extremely old / non-standard runtimes — fall back to Math.random.
+    // Not cryptographically secure, but still provides a stable ID.
+    for (let i = 0; i < buffer.length; i += 1) {
+      buffer[i] = Math.floor(Math.random() * 256);
+    }
+  }
+
+  let out = '';
+  for (const value of buffer) {
+    out += value.toString(16).padStart(2, '0');
+  }
+  return out;
+}
 
 // ---------------------------------------------------------------------------
 // Status
@@ -175,7 +192,7 @@ const VALID_TRANSITIONS: Record<ImportJobStatus, readonly ImportJobStatus[]> = {
 export function createImportJob(params: CreateImportJobParams): ImportJob {
   const now = new Date().toISOString();
   return {
-    id: params.id ?? randomBytes(8).toString('hex'),
+    id: params.id ?? randomHex(8),
     fileId: params.fileId,
     fileName: params.fileName,
     accountId: params.accountId,
