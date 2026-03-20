@@ -132,6 +132,11 @@ export {
   hasInsightConsent,
   canRunAiInsights,
   INSIGHT_CONSENT_SCHEMA_VERSION,
+  createConsentStore,
+  addConsentToStore,
+  revokeConsentInStore,
+  getActiveConsent,
+  listUserConsents,
 } from './insights.js';
 export type {
   InsightTransaction,
@@ -144,4 +149,5 @@ export type {
   InsightDataScope,
   InsightConsent,
   CreateInsightConsentParams,
+  ConsentStore,
 } from './insights.js';

@@ -487,3 +487,128 @@ export function hasInsightConsent(consent: InsightConsent, scope: InsightConsent
 export function canRunAiInsights(consent: InsightConsent): boolean {
   return hasInsightConsent(consent, 'ai_insights');
 }
+
+// ---------------------------------------------------------------------------
+// Consent Store
+// ---------------------------------------------------------------------------
+
+/**
+ * An append-only in-memory store that holds the full history of consent
+ * records for all users. Every grant and every revocation is persisted as a
+ * separate record so that the history of consent changes can be inspected for
+ * audit purposes.
+ *
+ * Records are stored in insertion order (oldest first). Queries always return
+ * new arrays so callers cannot mutate internal state.
+ *
+ * Designed for use in the local application layer; persist to SQLite via the
+ * database package for durability.
+ */
+export interface ConsentStore {
+  /** All consent records in insertion order (oldest first). */
+  readonly records: readonly InsightConsent[];
+}
+
+/**
+ * Creates an empty `ConsentStore` with no records.
+ *
+ * @example
+ * ```ts
+ * const store = createConsentStore();
+ * ```
+ */
+export function createConsentStore(): ConsentStore {
+  return { records: [] };
+}
+
+/**
+ * Appends a consent record to the store.
+ * Returns a new `ConsentStore`; the original is not mutated.
+ * Throws if a record with the same ID already exists.
+ *
+ * @example
+ * ```ts
+ * const consent = createInsightConsent({ userId: 'u1', scopes: ['ai_insights'], granted: true });
+ * const store = addConsentToStore(createConsentStore(), consent);
+ * ```
+ */
+export function addConsentToStore(store: ConsentStore, consent: InsightConsent): ConsentStore {
+  if (store.records.some((r) => r.id === consent.id)) {
+    throw new Error(`Consent record with ID "${consent.id}" already exists in the store`);
+  }
+  return { records: [...store.records, consent] };
+}
+
+/**
+ * Records a revocation for an existing consent record in the store.
+ * Returns a new `ConsentStore` with the consent updated to `granted: false`
+ * and `revokedAt` set to the current timestamp; the original store is not
+ * mutated.
+ *
+ * Throws if no consent with the given ID exists in the store.
+ *
+ * @example
+ * ```ts
+ * const store2 = revokeConsentInStore(store, consent.id);
+ * // store2 records[n].granted === false
+ * ```
+ */
+export function revokeConsentInStore(store: ConsentStore, consentId: string): ConsentStore {
+  const index = store.records.findIndex((r) => r.id === consentId);
+  if (index === -1) {
+    throw new Error(`Consent record with ID "${consentId}" not found in the store`);
+  }
+  const updated = revokeInsightConsent(store.records[index]!);
+  const records = [...store.records.slice(0, index), updated, ...store.records.slice(index + 1)];
+  return { records };
+}
+
+/**
+ * Returns the most recently recorded **active** consent for a given user and
+ * scope, or `undefined` when no active consent exists.
+ *
+ * "Active" means `granted === true` and `revokedAt === null`.
+ *
+ * Only the latest matching active record is returned. If the user has
+ * previously been granted and then revoked consent for a scope, and no new
+ * grant has been recorded, this function returns `undefined`.
+ *
+ * @example
+ * ```ts
+ * const active = getActiveConsent(store, 'user-1', 'ai_insights');
+ * if (active) {
+ *   runAiInsightPipeline();
+ * }
+ * ```
+ */
+export function getActiveConsent(
+  store: ConsentStore,
+  userId: string,
+  scope: InsightConsentScope,
+): InsightConsent | undefined {
+  // Iterate in reverse to find the most recent record first
+  for (let i = store.records.length - 1; i >= 0; i--) {
+    const record = store.records[i]!;
+    if (record.userId === userId && record.scopes.includes(scope) && hasInsightConsent(record, scope)) {
+      return record;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Returns all consent records for a given user in insertion order (oldest
+ * first). This is the full audit trail of every grant and revocation made by
+ * the user.
+ *
+ * Returns an empty array when no records exist for the user.
+ *
+ * @example
+ * ```ts
+ * const history = listUserConsents(store, 'user-1');
+ * // history[0] is the oldest recorded consent decision
+ * ```
+ */
+export function listUserConsents(store: ConsentStore, userId: string): InsightConsent[] {
+  return store.records.filter((r) => r.userId === userId);
+}

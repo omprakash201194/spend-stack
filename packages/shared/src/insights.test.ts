@@ -7,6 +7,11 @@ import {
   hasInsightConsent,
   canRunAiInsights,
   INSIGHT_CONSENT_SCHEMA_VERSION,
+  createConsentStore,
+  addConsentToStore,
+  revokeConsentInStore,
+  getActiveConsent,
+  listUserConsents,
 } from './insights.js';
 import type { InsightTransaction } from './insights.js';
 
@@ -447,5 +452,231 @@ describe('canRunAiInsights', () => {
       granted: false,
     });
     expect(canRunAiInsights(consent)).toBe(false);
+  });
+});
+
+// ── ConsentStore ──────────────────────────────────────────────────────────────
+
+describe('createConsentStore', () => {
+  it('creates an empty store with no records', () => {
+    const store = createConsentStore();
+    expect(store.records).toHaveLength(0);
+  });
+
+  it('returns an empty array for records', () => {
+    const store = createConsentStore();
+    expect(Array.isArray(store.records)).toBe(true);
+  });
+});
+
+describe('addConsentToStore', () => {
+  it('appends a consent record to the store', () => {
+    const store = createConsentStore();
+    const consent = createInsightConsent({ userId: 'u1', scopes: ['balance_summary'], granted: true });
+    const updated = addConsentToStore(store, consent);
+    expect(updated.records).toHaveLength(1);
+    expect(updated.records[0]).toBe(consent);
+  });
+
+  it('does not mutate the original store', () => {
+    const store = createConsentStore();
+    const consent = createInsightConsent({ userId: 'u1', scopes: ['balance_summary'], granted: true });
+    addConsentToStore(store, consent);
+    expect(store.records).toHaveLength(0);
+  });
+
+  it('preserves insertion order (oldest first)', () => {
+    const c1 = createInsightConsent({ userId: 'u1', scopes: ['balance_summary'], granted: true });
+    const c2 = createInsightConsent({ userId: 'u1', scopes: ['cashflow_summary'], granted: true });
+    let store = createConsentStore();
+    store = addConsentToStore(store, c1);
+    store = addConsentToStore(store, c2);
+    expect(store.records[0]).toBe(c1);
+    expect(store.records[1]).toBe(c2);
+  });
+
+  it('throws when a record with the same ID is added twice', () => {
+    const consent = createInsightConsent({ userId: 'u1', scopes: ['balance_summary'], granted: true });
+    let store = addConsentToStore(createConsentStore(), consent);
+    expect(() => addConsentToStore(store, consent)).toThrow(/already exists/);
+  });
+
+  it('allows multiple records for the same user', () => {
+    const c1 = createInsightConsent({ userId: 'u1', scopes: ['balance_summary'], granted: true });
+    const c2 = createInsightConsent({ userId: 'u1', scopes: ['balance_summary'], granted: false });
+    let store = createConsentStore();
+    store = addConsentToStore(store, c1);
+    store = addConsentToStore(store, c2);
+    expect(store.records).toHaveLength(2);
+  });
+});
+
+describe('revokeConsentInStore', () => {
+  it('marks the consent as revoked in the store', () => {
+    const consent = createInsightConsent({ userId: 'u1', scopes: ['ai_insights'], granted: true });
+    let store = addConsentToStore(createConsentStore(), consent);
+    store = revokeConsentInStore(store, consent.id);
+    expect(store.records[0]?.granted).toBe(false);
+    expect(store.records[0]?.revokedAt).not.toBeNull();
+  });
+
+  it('does not mutate the original store', () => {
+    const consent = createInsightConsent({ userId: 'u1', scopes: ['ai_insights'], granted: true });
+    const store = addConsentToStore(createConsentStore(), consent);
+    revokeConsentInStore(store, consent.id);
+    expect(store.records[0]?.granted).toBe(true);
+    expect(store.records[0]?.revokedAt).toBeNull();
+  });
+
+  it('preserves the consent ID and all other fields', () => {
+    const consent = createInsightConsent({
+      userId: 'u5',
+      scopes: ['cashflow_summary'],
+      granted: true,
+      dataScope: 'anonymized',
+    });
+    let store = addConsentToStore(createConsentStore(), consent);
+    store = revokeConsentInStore(store, consent.id);
+    const record = store.records[0]!;
+    expect(record.id).toBe(consent.id);
+    expect(record.userId).toBe('u5');
+    expect(record.scopes).toEqual(['cashflow_summary']);
+    expect(record.dataScope).toBe('anonymized');
+  });
+
+  it('keeps the total record count unchanged', () => {
+    const consent = createInsightConsent({ userId: 'u1', scopes: ['ai_insights'], granted: true });
+    let store = addConsentToStore(createConsentStore(), consent);
+    store = revokeConsentInStore(store, consent.id);
+    expect(store.records).toHaveLength(1);
+  });
+
+  it('throws when the consent ID is not found', () => {
+    const store = createConsentStore();
+    expect(() => revokeConsentInStore(store, 'nonexistent-id')).toThrow(/not found/);
+  });
+
+  it('only modifies the targeted consent when multiple records exist', () => {
+    const c1 = createInsightConsent({ userId: 'u1', scopes: ['balance_summary'], granted: true });
+    const c2 = createInsightConsent({ userId: 'u1', scopes: ['ai_insights'], granted: true });
+    let store = createConsentStore();
+    store = addConsentToStore(store, c1);
+    store = addConsentToStore(store, c2);
+    store = revokeConsentInStore(store, c1.id);
+    expect(store.records.find((r) => r.id === c1.id)?.granted).toBe(false);
+    expect(store.records.find((r) => r.id === c2.id)?.granted).toBe(true);
+  });
+});
+
+describe('getActiveConsent', () => {
+  it('returns undefined when the store is empty', () => {
+    const store = createConsentStore();
+    expect(getActiveConsent(store, 'u1', 'balance_summary')).toBeUndefined();
+  });
+
+  it('returns the active consent record when granted and not revoked', () => {
+    const consent = createInsightConsent({ userId: 'u1', scopes: ['balance_summary'], granted: true });
+    const store = addConsentToStore(createConsentStore(), consent);
+    expect(getActiveConsent(store, 'u1', 'balance_summary')).toBe(consent);
+  });
+
+  it('returns undefined when consent was denied (granted: false)', () => {
+    const consent = createInsightConsent({ userId: 'u1', scopes: ['balance_summary'], granted: false });
+    const store = addConsentToStore(createConsentStore(), consent);
+    expect(getActiveConsent(store, 'u1', 'balance_summary')).toBeUndefined();
+  });
+
+  it('returns undefined after consent is revoked', () => {
+    const consent = createInsightConsent({ userId: 'u1', scopes: ['ai_insights'], granted: true });
+    let store = addConsentToStore(createConsentStore(), consent);
+    store = revokeConsentInStore(store, consent.id);
+    expect(getActiveConsent(store, 'u1', 'ai_insights')).toBeUndefined();
+  });
+
+  it('returns the latest active consent when a new grant follows a revocation', () => {
+    const first = createInsightConsent({ userId: 'u1', scopes: ['ai_insights'], granted: true });
+    const regrant = createInsightConsent({ userId: 'u1', scopes: ['ai_insights'], granted: true });
+    let store = addConsentToStore(createConsentStore(), first);
+    store = revokeConsentInStore(store, first.id);
+    store = addConsentToStore(store, regrant);
+    expect(getActiveConsent(store, 'u1', 'ai_insights')).toBe(regrant);
+  });
+
+  it('returns undefined when the scope is not covered by the consent', () => {
+    const consent = createInsightConsent({ userId: 'u1', scopes: ['balance_summary'], granted: true });
+    const store = addConsentToStore(createConsentStore(), consent);
+    expect(getActiveConsent(store, 'u1', 'ai_insights')).toBeUndefined();
+  });
+
+  it('does not return consent belonging to a different user', () => {
+    const consent = createInsightConsent({ userId: 'u2', scopes: ['balance_summary'], granted: true });
+    const store = addConsentToStore(createConsentStore(), consent);
+    expect(getActiveConsent(store, 'u1', 'balance_summary')).toBeUndefined();
+  });
+
+  it('handles multiple users independently', () => {
+    const c1 = createInsightConsent({ userId: 'u1', scopes: ['ai_insights'], granted: true });
+    const c2 = createInsightConsent({ userId: 'u2', scopes: ['ai_insights'], granted: false });
+    let store = createConsentStore();
+    store = addConsentToStore(store, c1);
+    store = addConsentToStore(store, c2);
+    expect(getActiveConsent(store, 'u1', 'ai_insights')).toBe(c1);
+    expect(getActiveConsent(store, 'u2', 'ai_insights')).toBeUndefined();
+  });
+});
+
+describe('listUserConsents', () => {
+  it('returns an empty array when the store has no records for the user', () => {
+    const store = createConsentStore();
+    expect(listUserConsents(store, 'u1')).toEqual([]);
+  });
+
+  it('returns all consent records for the specified user', () => {
+    const c1 = createInsightConsent({ userId: 'u1', scopes: ['balance_summary'], granted: true });
+    const c2 = createInsightConsent({ userId: 'u1', scopes: ['ai_insights'], granted: true });
+    let store = createConsentStore();
+    store = addConsentToStore(store, c1);
+    store = addConsentToStore(store, c2);
+    const history = listUserConsents(store, 'u1');
+    expect(history).toHaveLength(2);
+    expect(history).toContain(c1);
+    expect(history).toContain(c2);
+  });
+
+  it('excludes records belonging to other users', () => {
+    const c1 = createInsightConsent({ userId: 'u1', scopes: ['balance_summary'], granted: true });
+    const c2 = createInsightConsent({ userId: 'u2', scopes: ['balance_summary'], granted: true });
+    let store = createConsentStore();
+    store = addConsentToStore(store, c1);
+    store = addConsentToStore(store, c2);
+    expect(listUserConsents(store, 'u1')).toHaveLength(1);
+    expect(listUserConsents(store, 'u1')[0]).toBe(c1);
+  });
+
+  it('reflects the latest revocation state for each consent record', () => {
+    const c1 = createInsightConsent({ userId: 'u1', scopes: ['ai_insights'], granted: true });
+    const c2 = createInsightConsent({ userId: 'u1', scopes: ['balance_summary'], granted: true });
+    let store = createConsentStore();
+    store = addConsentToStore(store, c1);
+    store = addConsentToStore(store, c2);
+    store = revokeConsentInStore(store, c1.id);
+    const history = listUserConsents(store, 'u1');
+    expect(history).toHaveLength(2);
+    // c1 was revoked — its record should now show granted: false
+    const c1Record = history.find((r) => r.id === c1.id);
+    expect(c1Record?.granted).toBe(false);
+    expect(c1Record?.revokedAt).not.toBeNull();
+    // c2 is still active
+    const c2Record = history.find((r) => r.id === c2.id);
+    expect(c2Record?.granted).toBe(true);
+  });
+
+  it('does not allow callers to mutate the store via the returned array', () => {
+    const c1 = createInsightConsent({ userId: 'u1', scopes: ['balance_summary'], granted: true });
+    const store = addConsentToStore(createConsentStore(), c1);
+    const history = listUserConsents(store, 'u1');
+    // Mutating the returned array should not affect the store
+    history.pop();
+    expect(store.records).toHaveLength(1);
   });
 });
