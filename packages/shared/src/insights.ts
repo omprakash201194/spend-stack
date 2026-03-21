@@ -493,10 +493,12 @@ export function canRunAiInsights(consent: InsightConsent): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * An append-only in-memory store that holds the full history of consent
- * records for all users. Every grant and every revocation is persisted as a
- * separate record so that the history of consent changes can be inspected for
- * audit purposes.
+ * An in-memory store that holds consent records for all users.
+ *
+ * Each consent grant or revocation updates the corresponding record in-place;
+ * the store itself does not retain a full historical log of changes. If a
+ * complete audit history is required, callers should persist consent events
+ * to an external durable store.
  *
  * Records are stored in insertion order (oldest first). Queries always return
  * new arrays so callers cannot mutate internal state.
@@ -558,7 +560,13 @@ export function revokeConsentInStore(store: ConsentStore, consentId: string): Co
   if (index === -1) {
     throw new Error(`Consent record with ID "${consentId}" not found in the store`);
   }
-  const updated = revokeInsightConsent(store.records[index]!);
+  const existing = store.records[index]!;
+  // Make revocation idempotent: if the consent is already revoked/denied,
+  // leave the original record (and its original revokedAt timestamp) intact.
+  if (existing.granted === false || existing.revokedAt !== null) {
+    return store;
+  }
+  const updated = revokeInsightConsent(existing);
   const records = [...store.records.slice(0, index), updated, ...store.records.slice(index + 1)];
   return { records };
 }

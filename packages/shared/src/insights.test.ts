@@ -566,6 +566,24 @@ describe('revokeConsentInStore', () => {
     expect(store.records.find((r) => r.id === c1.id)?.granted).toBe(false);
     expect(store.records.find((r) => r.id === c2.id)?.granted).toBe(true);
   });
+
+  it('is idempotent — revoking an already-revoked consent returns the same store', () => {
+    const consent = createInsightConsent({ userId: 'u1', scopes: ['ai_insights'], granted: true });
+    let store = addConsentToStore(createConsentStore(), consent);
+    store = revokeConsentInStore(store, consent.id);
+    const revokedAt = store.records[0]?.revokedAt;
+    // Revoking again should return the same store reference (no-op)
+    const store2 = revokeConsentInStore(store, consent.id);
+    expect(store2).toBe(store);
+    expect(store2.records[0]?.revokedAt).toBe(revokedAt);
+  });
+
+  it('is a no-op when consent was initially denied (granted: false)', () => {
+    const consent = createInsightConsent({ userId: 'u1', scopes: ['ai_insights'], granted: false });
+    const store = addConsentToStore(createConsentStore(), consent);
+    const store2 = revokeConsentInStore(store, consent.id);
+    expect(store2).toBe(store);
+  });
 });
 
 describe('getActiveConsent', () => {
