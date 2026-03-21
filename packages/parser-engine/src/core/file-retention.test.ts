@@ -7,6 +7,7 @@ import {
   findExpiredFiles,
   markDeleted,
   markSkipped,
+  buildRetentionNotice,
 } from './file-retention.js';
 
 const UPLOADED_AT = new Date('2024-01-01T10:00:00.000Z');
@@ -126,5 +127,63 @@ describe('markDeleted / markSkipped', () => {
     expect(skipped.deleteAfterAt).toBeNull();
     // original must not be mutated
     expect(record.retentionPolicy).toBe('auto_delete');
+  });
+});
+
+describe('buildRetentionNotice', () => {
+  const uploadedAt = new Date('2024-03-01T09:00:00.000Z');
+
+  it('returns the correct retentionDays for auto_delete policy', () => {
+    const file = createStatementFileRecord('f-1', 'march.csv', 'auto_delete', uploadedAt);
+    const notice = buildRetentionNotice(file);
+    expect(notice.retentionDays).toBe(DEFAULT_RETENTION_DAYS);
+  });
+
+  it('uses a custom retentionDays value in the title copy', () => {
+    const file = createStatementFileRecord('f-1', 'march.csv', 'auto_delete', uploadedAt, 30);
+    const notice = buildRetentionNotice(file, 30);
+    expect(notice.title).toContain('30');
+    expect(notice.retentionDays).toBe(30);
+  });
+
+  it('title uses singular "day" when retentionDays is 1', () => {
+    const file = createStatementFileRecord('f-1', 'march.csv', 'auto_delete', uploadedAt, 1);
+    const notice = buildRetentionNotice(file, 1);
+    expect(notice.title).toMatch(/\b1 day\b/);
+    expect(notice.title).not.toMatch(/\b1 days\b/);
+  });
+
+  it('title uses plural "days" when retentionDays > 1', () => {
+    const file = createStatementFileRecord('f-1', 'march.csv', 'auto_delete', uploadedAt);
+    const notice = buildRetentionNotice(file);
+    expect(notice.title).toMatch(/days/);
+  });
+
+  it('body mentions permanent transaction storage', () => {
+    const file = createStatementFileRecord('f-1', 'march.csv', 'auto_delete', uploadedAt);
+    const notice = buildRetentionNotice(file);
+    expect(notice.body.toLowerCase()).toMatch(/transaction/);
+    expect(notice.body.toLowerCase()).toMatch(/permanent/);
+  });
+
+  it('sets deleteAfterAt to the file deletion date for auto_delete', () => {
+    const file = createStatementFileRecord('f-1', 'march.csv', 'auto_delete', uploadedAt);
+    const notice = buildRetentionNotice(file);
+    expect(notice.deleteAfterAt).toEqual(file.deleteAfterAt);
+  });
+
+  it('returns keep notice with null deleteAfterAt for keep policy', () => {
+    const file = createStatementFileRecord('f-2', 'march.csv', 'keep', uploadedAt);
+    const notice = buildRetentionNotice(file);
+    expect(notice.deleteAfterAt).toBeNull();
+    expect(notice.title.toLowerCase()).toContain('kept');
+    expect(notice.body.toLowerCase()).toMatch(/transaction/);
+  });
+
+  it('does not mutate the file record', () => {
+    const file = createStatementFileRecord('f-1', 'march.csv', 'auto_delete', uploadedAt);
+    const originalDeleteAt = file.deleteAfterAt;
+    buildRetentionNotice(file);
+    expect(file.deleteAfterAt).toEqual(originalDeleteAt);
   });
 });

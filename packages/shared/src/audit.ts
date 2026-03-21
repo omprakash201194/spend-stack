@@ -43,6 +43,11 @@ export type AuditEventType =
   | 'import.completed'
   | 'import.failed'
   | 'import.cancelled'
+  // File lifecycle events
+  | 'file.retained'
+  | 'file.deleted'
+  | 'file.deletion_failed'
+  | 'file.cleanup_run_completed'
   // Transaction events
   | 'transaction.reviewed'
   | 'transaction.categorized'
@@ -52,7 +57,9 @@ export type AuditEventType =
   | 'insight.consent_revoked'
   | 'insight.balance_summary_computed'
   | 'insight.cashflow_summary_computed'
-  | 'insight.ai_insights_requested';
+  | 'insight.ai_insights_requested'
+  // Traceability events
+  | 'trace.queried';
 
 /**
  * A single audit event.

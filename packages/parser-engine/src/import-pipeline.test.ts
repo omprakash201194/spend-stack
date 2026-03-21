@@ -177,3 +177,163 @@ describe('ImportPipelineError', () => {
     expect(err.message).toBe('something went wrong');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Skipped summary and override flow
+// ---------------------------------------------------------------------------
+
+const SALARY_TX = {
+  date: '2024-01-05',
+  description: 'NEFT/987654321/SALARY CREDIT',
+  debitAmount: null,
+  creditAmount: 50000,
+  signedAmount: 50000,
+  balanceIfAvailable: 100000,
+  currency: 'INR',
+  rawReference: '',
+};
+
+describe('runImportPipeline — skippedSummary', () => {
+  it('populates skippedSummary with one entry per exact duplicate skipped', () => {
+    const result = runImportPipeline({
+      fileId: 'file-skip-1',
+      fileName: 'statement.csv',
+      fileContent: ICICI_CSV,
+      fileType: 'csv',
+      accountId: 'acc-1',
+      uploadedByUserId: 'user-1',
+      existingTransactions: [SALARY_TX],
+    });
+
+    expect(result.skippedSummary).toHaveLength(1);
+    expect(result.skippedSummary[0]?.reason).toBe('exact_duplicate');
+    expect(result.skippedSummary[0]?.existingIndex).toBe(0);
+    expect(result.skippedSummary[0]?.transaction.description).toContain('SALARY');
+  });
+
+  it('exposes the fingerprint on each skipped record', () => {
+    const result = runImportPipeline({
+      fileId: 'file-skip-2',
+      fileName: 'statement.csv',
+      fileContent: ICICI_CSV,
+      fileType: 'csv',
+      accountId: 'acc-skip',
+      uploadedByUserId: 'user-1',
+      existingTransactions: [SALARY_TX],
+    });
+
+    const skipped = result.skippedSummary[0];
+    expect(skipped?.fingerprint.accountId).toBe('acc-skip');
+    expect(skipped?.fingerprint.transactionDate).toBe('2024-01-05');
+    expect(skipped?.fingerprint.amount).toBe(50000);
+  });
+
+  it('returns an empty skippedSummary when there are no duplicates', () => {
+    const result = runImportPipeline({
+      fileId: 'file-skip-3',
+      fileName: 'statement.csv',
+      fileContent: ICICI_CSV,
+      fileType: 'csv',
+      accountId: 'acc-1',
+      uploadedByUserId: 'user-1',
+    });
+
+    expect(result.skippedSummary).toHaveLength(0);
+  });
+
+  it('returns an empty skippedSummary on unsupported format', () => {
+    const result = runImportPipeline({
+      fileId: 'file-skip-4',
+      fileName: 'unknown.csv',
+      fileContent: `Date,Amount\n01/01/2024,500`,
+      fileType: 'csv',
+      accountId: 'acc-1',
+      uploadedByUserId: 'user-1',
+    });
+
+    expect(result.skippedSummary).toHaveLength(0);
+    expect(result.status).toBe('failed');
+  });
+});
+
+describe('runImportPipeline — override flow', () => {
+  // The ICICI parser assigns sourceReference='row-1' to the first data row
+  // (header is line 0, first data row is line 1 within splitLines output).
+  const SALARY_SOURCE_REF = 'row-1';
+
+  it('imports an overridden duplicate into normalizedTransactions', () => {
+    const result = runImportPipeline({
+      fileId: 'file-override-1',
+      fileName: 'statement.csv',
+      fileContent: ICICI_CSV,
+      fileType: 'csv',
+      accountId: 'acc-1',
+      uploadedByUserId: 'user-1',
+      existingTransactions: [SALARY_TX],
+      overrideExactDuplicates: [SALARY_SOURCE_REF],
+    });
+
+    const salaryInNormalized = result.normalizedTransactions.some((t) =>
+      t.description.includes('SALARY'),
+    );
+    expect(salaryInNormalized).toBe(true);
+    expect(result.overriddenTransactions).toHaveLength(1);
+    expect(result.metrics.duplicateRowsOverridden).toBe(1);
+  });
+
+  it('does not add overridden transactions to skippedSummary', () => {
+    const result = runImportPipeline({
+      fileId: 'file-override-2',
+      fileName: 'statement.csv',
+      fileContent: ICICI_CSV,
+      fileType: 'csv',
+      accountId: 'acc-2',
+      uploadedByUserId: 'user-1',
+      existingTransactions: [SALARY_TX],
+      overrideExactDuplicates: [SALARY_SOURCE_REF],
+    });
+
+    // Overridden transactions must NOT appear in skippedSummary
+    const overriddenInSkipped = result.skippedSummary.some((s) =>
+      s.transaction.description.includes('SALARY'),
+    );
+    expect(overriddenInSkipped).toBe(false);
+    expect(result.skippedSummary).toHaveLength(0);
+  });
+
+  it('tracks duplicate decisions in duplicates.decisions', () => {
+    const result = runImportPipeline({
+      fileId: 'file-override-3',
+      fileName: 'statement.csv',
+      fileContent: ICICI_CSV,
+      fileType: 'csv',
+      accountId: 'acc-1',
+      uploadedByUserId: 'user-1',
+      existingTransactions: [SALARY_TX],
+    });
+
+    // decisions should have one entry per normalized candidate (3 rows)
+    expect(result.duplicates.decisions).toHaveLength(3);
+
+    const skippedDecision = result.duplicates.decisions.find(
+      (d) => d.outcome === 'skipped_exact',
+    );
+    expect(skippedDecision).toBeDefined();
+    expect(skippedDecision?.reason).toContain('auto-skipped');
+  });
+
+  it('records duplicateRowsOverridden = 0 when no override is given', () => {
+    const result = runImportPipeline({
+      fileId: 'file-override-4',
+      fileName: 'statement.csv',
+      fileContent: ICICI_CSV,
+      fileType: 'csv',
+      accountId: 'acc-1',
+      uploadedByUserId: 'user-1',
+      existingTransactions: [SALARY_TX],
+    });
+
+    expect(result.metrics.duplicateRowsOverridden).toBe(0);
+    expect(result.overriddenTransactions).toHaveLength(0);
+  });
+});
