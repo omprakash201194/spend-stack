@@ -184,3 +184,14 @@ export {
   formatTraceForDisplay,
 } from './source-traceability.js';
 export type { SourceTraceRecord, TraceStore } from './source-traceability.js';
+
+export { createTransaction, validateTransaction, isValidTransaction } from './transaction.js';
+export type {
+  TransactionType,
+  TransactionStatus,
+  Transaction,
+  CreateTransactionParams,
+  TransactionValidationErrorCode,
+  TransactionValidationError,
+  TransactionValidationResult,
+} from './transaction.js';
