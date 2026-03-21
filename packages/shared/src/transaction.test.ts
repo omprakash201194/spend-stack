@@ -219,7 +219,7 @@ describe('validateTransaction — missing_type / invalid_type', () => {
   });
 });
 
-describe('validateTransaction — missing_amount / negative_amount', () => {
+describe('validateTransaction — missing_amount / negative_amount / invalid_amount', () => {
   it('reports missing_amount when amount is undefined', () => {
     const tx = { ...makeTx(), amount: undefined as unknown as number };
     const result = validateTransaction(tx);
@@ -230,6 +230,24 @@ describe('validateTransaction — missing_amount / negative_amount', () => {
     const tx = { ...makeTx(), amount: -1 };
     const result = validateTransaction(tx);
     expect(result.errors.some((e) => e.code === 'negative_amount')).toBe(true);
+  });
+
+  it('reports invalid_amount for NaN', () => {
+    const tx = { ...makeTx(), amount: NaN };
+    const result = validateTransaction(tx);
+    expect(result.errors.some((e) => e.code === 'invalid_amount')).toBe(true);
+  });
+
+  it('reports invalid_amount for Infinity', () => {
+    const tx = { ...makeTx(), amount: Infinity };
+    const result = validateTransaction(tx);
+    expect(result.errors.some((e) => e.code === 'invalid_amount')).toBe(true);
+  });
+
+  it('reports invalid_amount for -Infinity', () => {
+    const tx = { ...makeTx(), amount: -Infinity };
+    const result = validateTransaction(tx);
+    expect(result.errors.some((e) => e.code === 'invalid_amount')).toBe(true);
   });
 });
 
@@ -277,6 +295,46 @@ describe('validateTransaction — multiple errors', () => {
     expect(codes).toContain('missing_account_id');
     expect(codes).toContain('missing_date');
     expect(codes).toContain('missing_description');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateTransaction — robustness (null / non-object / non-string fields)
+// ---------------------------------------------------------------------------
+
+describe('validateTransaction — null / undefined input', () => {
+  it('returns valid=false and does not throw when tx is null', () => {
+    expect(() => validateTransaction(null)).not.toThrow();
+    const result = validateTransaction(null);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.code === 'missing_id')).toBe(true);
+  });
+
+  it('returns valid=false and does not throw when tx is undefined', () => {
+    expect(() => validateTransaction(undefined)).not.toThrow();
+    const result = validateTransaction(undefined);
+    expect(result.valid).toBe(false);
+  });
+
+  it('returns valid=false and does not throw when tx is a non-object primitive', () => {
+    expect(() => validateTransaction(42)).not.toThrow();
+    expect(validateTransaction(42).valid).toBe(false);
+  });
+});
+
+describe('validateTransaction — non-string field values', () => {
+  it('reports missing_date without throwing when date is a number', () => {
+    const tx = { ...makeTx(), date: 20240115 as unknown as string };
+    expect(() => validateTransaction(tx)).not.toThrow();
+    const result = validateTransaction(tx);
+    expect(result.errors.some((e) => e.code === 'missing_date')).toBe(true);
+  });
+
+  it('reports missing_id without throwing when id is a number', () => {
+    const tx = { ...makeTx(), id: 999 as unknown as string };
+    expect(() => validateTransaction(tx)).not.toThrow();
+    const result = validateTransaction(tx);
+    expect(result.errors.some((e) => e.code === 'missing_id')).toBe(true);
   });
 });
 

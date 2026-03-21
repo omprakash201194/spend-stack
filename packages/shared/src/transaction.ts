@@ -14,26 +14,7 @@
  *   display targeted error messages without inspecting raw strings.
  */
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-function randomHex(bytes: number): string {
-  const buffer = new Uint8Array(bytes);
-  if (globalThis.crypto?.getRandomValues) {
-    globalThis.crypto.getRandomValues(buffer);
-  } else {
-    // Fallback for environments without Web Crypto (non-cryptographic).
-    for (let i = 0; i < buffer.length; i += 1) {
-      buffer[i] = Math.floor(Math.random() * 256);
-    }
-  }
-  let out = '';
-  for (const value of buffer) {
-    out += value.toString(16).padStart(2, '0');
-  }
-  return out;
-}
+import { randomHex } from './random-hex.js';
 
 // ---------------------------------------------------------------------------
 // Core types
@@ -190,6 +171,7 @@ export type TransactionValidationErrorCode =
   | 'invalid_type'
   | 'missing_amount'
   | 'negative_amount'
+  | 'invalid_amount'
   | 'missing_currency'
   | 'missing_import_job_id'
   | 'missing_source_file_id'
@@ -243,67 +225,92 @@ const VALID_TYPES: ReadonlySet<string> = new Set<TransactionType>(['debit', 'cre
  * }
  * ```
  */
-export function validateTransaction(tx: Transaction): TransactionValidationResult {
+export function validateTransaction(tx: unknown): TransactionValidationResult {
   const errors: TransactionValidationError[] = [];
 
-  if (!tx.id?.trim()) {
+  if (tx == null || typeof tx !== 'object') {
+    return {
+      valid: false,
+      errors: [
+        { code: 'missing_id', message: 'Transaction ID is required.' },
+        { code: 'missing_account_id', message: 'Account ID is required.' },
+        { code: 'missing_date', message: 'Transaction date is required.' },
+        { code: 'missing_description', message: 'Transaction description is required.' },
+        { code: 'missing_type', message: 'Transaction type is required.' },
+        { code: 'missing_amount', message: 'Transaction amount is required.' },
+        { code: 'missing_currency', message: 'Transaction currency is required.' },
+        { code: 'missing_import_job_id', message: 'Import job ID is required for source traceability.' },
+        { code: 'missing_source_file_id', message: 'Source file ID is required for source traceability.' },
+        { code: 'missing_source_reference', message: 'Source reference is required for source traceability.' },
+      ],
+    };
+  }
+
+  const t = tx as Record<string, unknown>;
+
+  if (typeof t.id !== 'string' || !t.id.trim()) {
     errors.push({ code: 'missing_id', message: 'Transaction ID is required.' });
   }
 
-  if (!tx.accountId?.trim()) {
+  if (typeof t.accountId !== 'string' || !t.accountId.trim()) {
     errors.push({ code: 'missing_account_id', message: 'Account ID is required.' });
   }
 
-  if (!tx.date?.trim()) {
+  if (typeof t.date !== 'string' || !t.date.trim()) {
     errors.push({ code: 'missing_date', message: 'Transaction date is required.' });
-  } else if (!ISO_DATE_RE.test(tx.date)) {
+  } else if (!ISO_DATE_RE.test(t.date)) {
     errors.push({
       code: 'invalid_date_format',
-      message: `Date "${tx.date}" must be in YYYY-MM-DD format.`,
+      message: `Date "${t.date}" must be in YYYY-MM-DD format.`,
     });
   }
 
-  if (!tx.description?.trim()) {
+  if (typeof t.description !== 'string' || !t.description.trim()) {
     errors.push({ code: 'missing_description', message: 'Transaction description is required.' });
   }
 
-  if (!tx.type) {
+  if (typeof t.type !== 'string' || !t.type) {
     errors.push({ code: 'missing_type', message: 'Transaction type is required.' });
-  } else if (!VALID_TYPES.has(tx.type)) {
+  } else if (!VALID_TYPES.has(t.type)) {
     errors.push({
       code: 'invalid_type',
-      message: `Transaction type "${tx.type as string}" must be "debit" or "credit".`,
+      message: `Transaction type "${t.type}" must be "debit" or "credit".`,
     });
   }
 
-  if (tx.amount === undefined || tx.amount === null) {
+  if (t.amount === undefined || t.amount === null) {
     errors.push({ code: 'missing_amount', message: 'Transaction amount is required.' });
-  } else if (tx.amount < 0) {
+  } else if (typeof t.amount !== 'number' || !Number.isFinite(t.amount)) {
+    errors.push({
+      code: 'invalid_amount',
+      message: `Amount ${String(t.amount)} must be a finite number.`,
+    });
+  } else if (t.amount < 0) {
     errors.push({
       code: 'negative_amount',
-      message: `Amount ${tx.amount} must be non-negative.`,
+      message: `Amount ${t.amount} must be non-negative.`,
     });
   }
 
-  if (!tx.currency?.trim()) {
+  if (typeof t.currency !== 'string' || !t.currency.trim()) {
     errors.push({ code: 'missing_currency', message: 'Transaction currency is required.' });
   }
 
-  if (!tx.importJobId?.trim()) {
+  if (typeof t.importJobId !== 'string' || !t.importJobId.trim()) {
     errors.push({
       code: 'missing_import_job_id',
       message: 'Import job ID is required for source traceability.',
     });
   }
 
-  if (!tx.sourceFileId?.trim()) {
+  if (typeof t.sourceFileId !== 'string' || !t.sourceFileId.trim()) {
     errors.push({
       code: 'missing_source_file_id',
       message: 'Source file ID is required for source traceability.',
     });
   }
 
-  if (!tx.sourceReference?.trim()) {
+  if (typeof t.sourceReference !== 'string' || !t.sourceReference.trim()) {
     errors.push({
       code: 'missing_source_reference',
       message: 'Source reference is required for source traceability.',
@@ -325,6 +332,6 @@ export function validateTransaction(tx: Transaction): TransactionValidationResul
  * }
  * ```
  */
-export function isValidTransaction(tx: Transaction): boolean {
+export function isValidTransaction(tx: unknown): boolean {
   return validateTransaction(tx).valid;
 }
