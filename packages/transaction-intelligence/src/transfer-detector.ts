@@ -25,10 +25,19 @@ export interface TransferDetectorOptions {
    */
   maxDaysDelta?: number;
   /**
-   * Minimum confidence score required to declare a match.
+   * Minimum confidence score required to declare a confirmed match.
    * Defaults to `0.8`.
    */
   minConfidence?: number;
+  /**
+   * Minimum confidence score below which candidates are silently ignored
+   * (not even surfaced for review).  Must be ≤ `minConfidence`.
+   * Candidates scoring at or above this value but below `minConfidence` are
+   * returned with `isTransfer: false` but with `peerId` populated so that
+   * callers can route them to the review queue.
+   * Defaults to `0.5`.
+   */
+  reviewThreshold?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -99,7 +108,7 @@ export function detectTransfer(
   candidates: Transaction[],
   options: TransferDetectorOptions = {},
 ): TransferDetectionResult {
-  const { maxDaysDelta = 3, minConfidence = 0.8 } = options;
+  const { maxDaysDelta = 3, minConfidence = 0.8, reviewThreshold = 0.5 } = options;
 
   let bestMatch: Transaction | undefined;
   let bestScore = 0;
@@ -139,14 +148,26 @@ export function detectTransfer(
     }
   }
 
-  if (bestMatch === undefined || bestScore < minConfidence) {
+  // No candidate reached even the review threshold — no match at all
+  if (bestMatch === undefined || bestScore < reviewThreshold) {
     return {
       isTransfer: false,
       confidence: bestScore,
       reason:
         bestMatch === undefined
           ? 'No candidate transaction matched amount and direction'
-          : `Best candidate score ${bestScore.toFixed(2)} is below minimum confidence ${minConfidence}`,
+          : `Best candidate score ${bestScore.toFixed(2)} is below review threshold ${reviewThreshold}`,
+    };
+  }
+
+  // Candidate reached the review threshold but not the confidence threshold —
+  // surface it as an uncertain match so the caller can route it for review.
+  if (bestScore < minConfidence) {
+    return {
+      isTransfer: false,
+      confidence: bestScore,
+      peerId: bestMatch.id,
+      reason: `Uncertain match: candidate ${bestMatch.id} scored ${bestScore.toFixed(2)}, below minimum confidence ${minConfidence}; recommend review`,
     };
   }
 

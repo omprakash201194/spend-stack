@@ -36,6 +36,9 @@ export type {
   ExactDuplicate,
   FuzzyCandidate,
   DuplicateDetectionResult,
+  DuplicateDecisionOutcome,
+  DuplicateDecision,
+  DuplicateDetectionOptions,
 } from './core/duplicate-detector.js';
 
 // File lifecycle / retention
@@ -47,11 +50,13 @@ export {
   findExpiredFiles,
   markDeleted,
   markSkipped,
+  buildRetentionNotice,
 } from './core/file-retention.js';
 export type {
   RetentionPolicy,
   DeletionStatus,
   StatementFileRecord,
+  RetentionNotice,
 } from './core/file-retention.js';
 
 // Bank parsers
@@ -76,4 +81,5 @@ export type {
   ImportPipelineInput,
   ImportPipelineResult,
   ReviewQueueItem,
+  SkippedRecord,
 } from './import-pipeline.js';
