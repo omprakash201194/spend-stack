@@ -125,6 +125,31 @@ export type {
 } from './import-job.js';
 
 export {
+  createCategorizationRule,
+  createRuleStore,
+  addRuleToStore,
+  removeRuleFromStore,
+  updateRuleInStore,
+  getRuleById,
+  listRules,
+  listActiveRules,
+  deactivateRule,
+  reorderRule,
+} from './categorization-rule.js';
+export type {
+  CategorizationRuleId,
+  RuleConditionField,
+  RuleConditionOperator,
+  RuleCondition,
+  RuleMatchMode,
+  RuleSource,
+  CategorizationRule,
+  CreateCategorizationRuleParams,
+  UpdateCategorizationRuleParams,
+  RuleStore,
+} from './categorization-rule.js';
+
+export {
   computeBalanceSummary,
   computeCashflowSummary,
   createInsightConsent,

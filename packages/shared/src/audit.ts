@@ -47,6 +47,11 @@ export type AuditEventType =
   | 'transaction.reviewed'
   | 'transaction.categorized'
   | 'transaction.flagged'
+  // Categorization rule events
+  | 'categorization.rule_created'
+  | 'categorization.rule_updated'
+  | 'categorization.rule_deactivated'
+  | 'categorization.rule_deleted'
   // Insight & analytics events
   | 'insight.consent_granted'
   | 'insight.consent_revoked'
