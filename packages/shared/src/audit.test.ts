@@ -3,6 +3,7 @@ import {
   createAuditEvent,
   appendAuditEvent,
   formatAuditHistory,
+  queryAuditLog,
   AUDIT_SCHEMA_VERSION,
 } from './audit.js';
 import type { AuditEvent, AuditLog } from './audit.js';
@@ -299,5 +300,181 @@ describe('Privacy and workspace audit events', () => {
     });
     expect(event.type).toBe('privacy.access_denied');
     expect(event.metadata['reason']).toBe('scope_shared');
+  });
+});
+
+// ── queryAuditLog ─────────────────────────────────────────────────────────────
+
+describe('queryAuditLog', () => {
+  /** Builds a minimal AuditLog fixture for query tests. */
+  function buildLog(): AuditLog {
+    return [
+      {
+        id: 'e1',
+        schemaVersion: 1,
+        type: 'import.started',
+        actorId: 'user-1',
+        resourceType: 'import',
+        resourceId: 'file-1',
+        correlationId: 'corr-a',
+        timestamp: '2024-01-05T09:00:00.000Z',
+        metadata: {},
+      },
+      {
+        id: 'e2',
+        schemaVersion: 1,
+        type: 'import.completed',
+        actorId: 'user-1',
+        resourceType: 'import',
+        resourceId: 'file-1',
+        correlationId: 'corr-a',
+        timestamp: '2024-01-05T09:05:00.000Z',
+        metadata: {},
+      },
+      {
+        id: 'e3',
+        schemaVersion: 1,
+        type: 'transaction.reviewed',
+        actorId: 'user-2',
+        resourceType: 'transaction',
+        resourceId: 'tx-99',
+        timestamp: '2024-01-05T10:00:00.000Z',
+        metadata: {},
+      },
+      {
+        id: 'e4',
+        schemaVersion: 1,
+        type: 'file.deleted',
+        actorId: 'system',
+        resourceType: 'file',
+        resourceId: 'file-1',
+        timestamp: '2024-01-12T03:00:00.000Z',
+        metadata: {},
+      },
+      {
+        id: 'e5',
+        schemaVersion: 1,
+        type: 'file.cleanup_run_completed',
+        actorId: 'system',
+        resourceType: 'cleanup',
+        resourceId: 'run-1',
+        timestamp: '2024-01-12T03:01:00.000Z',
+        metadata: {},
+      },
+    ];
+  }
+
+  it('returns all events when no options are provided', () => {
+    const log = buildLog();
+    expect(queryAuditLog(log)).toHaveLength(5);
+  });
+
+  it('returns all events for an empty options object', () => {
+    const log = buildLog();
+    expect(queryAuditLog(log, {})).toHaveLength(5);
+  });
+
+  it('filters by a single type', () => {
+    const log = buildLog();
+    const result = queryAuditLog(log, { types: ['import.started'] });
+    expect(result).toHaveLength(1);
+    expect(result[0]?.type).toBe('import.started');
+  });
+
+  it('filters by multiple types', () => {
+    const log = buildLog();
+    const result = queryAuditLog(log, { types: ['import.started', 'import.completed'] });
+    expect(result).toHaveLength(2);
+    expect(result.every((e) => e.resourceType === 'import')).toBe(true);
+  });
+
+  it('filters by actorId', () => {
+    const log = buildLog();
+    const result = queryAuditLog(log, { actorId: 'user-2' });
+    expect(result).toHaveLength(1);
+    expect(result[0]?.id).toBe('e3');
+  });
+
+  it('filters by system actor', () => {
+    const log = buildLog();
+    const result = queryAuditLog(log, { actorId: 'system' });
+    expect(result).toHaveLength(2);
+  });
+
+  it('filters by resourceType', () => {
+    const log = buildLog();
+    const result = queryAuditLog(log, { resourceType: 'import' });
+    expect(result).toHaveLength(2);
+  });
+
+  it('filters by resourceId', () => {
+    const log = buildLog();
+    const result = queryAuditLog(log, { resourceId: 'file-1' });
+    expect(result).toHaveLength(3);
+  });
+
+  it('filters by correlationId', () => {
+    const log = buildLog();
+    const result = queryAuditLog(log, { correlationId: 'corr-a' });
+    expect(result).toHaveLength(2);
+    expect(result.every((e) => e.correlationId === 'corr-a')).toBe(true);
+  });
+
+  it('filters by from timestamp (inclusive)', () => {
+    const log = buildLog();
+    const result = queryAuditLog(log, { from: '2024-01-05T10:00:00.000Z' });
+    expect(result).toHaveLength(3);
+  });
+
+  it('filters by to timestamp (inclusive)', () => {
+    const log = buildLog();
+    const result = queryAuditLog(log, { to: '2024-01-05T09:05:00.000Z' });
+    expect(result).toHaveLength(2);
+  });
+
+  it('filters by both from and to timestamps', () => {
+    const log = buildLog();
+    const result = queryAuditLog(log, {
+      from: '2024-01-05T09:00:00.000Z',
+      to: '2024-01-05T09:05:00.000Z',
+    });
+    expect(result).toHaveLength(2);
+  });
+
+  it('combines multiple filter criteria with AND logic', () => {
+    const log = buildLog();
+    const result = queryAuditLog(log, {
+      actorId: 'user-1',
+      resourceType: 'import',
+      from: '2024-01-05T09:03:00.000Z',
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]?.type).toBe('import.completed');
+  });
+
+  it('returns an empty array when no events match', () => {
+    const log = buildLog();
+    const result = queryAuditLog(log, { actorId: 'unknown-user' });
+    expect(result).toHaveLength(0);
+  });
+
+  it('returns an empty array for an empty log', () => {
+    expect(queryAuditLog([], { actorId: 'user-1' })).toHaveLength(0);
+  });
+
+  it('does not mutate the original log', () => {
+    const log = buildLog();
+    queryAuditLog(log, { actorId: 'user-1' });
+    expect(log).toHaveLength(5);
+  });
+
+  it('can query file lifecycle events by type', () => {
+    const log = buildLog();
+    const result = queryAuditLog(log, {
+      types: ['file.deleted', 'file.cleanup_run_completed'],
+    });
+    expect(result).toHaveLength(2);
+    expect(result[0]?.type).toBe('file.deleted');
+    expect(result[1]?.type).toBe('file.cleanup_run_completed');
   });
 });

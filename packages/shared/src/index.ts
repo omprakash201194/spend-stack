@@ -90,6 +90,7 @@ export {
   createAuditEvent,
   appendAuditEvent,
   formatAuditHistory,
+  queryAuditLog,
   AUDIT_SCHEMA_VERSION,
 } from './audit.js';
 export type {
@@ -97,6 +98,7 @@ export type {
   AuditEventType,
   AuditEvent,
   AuditLog,
+  AuditQueryOptions,
 } from './audit.js';
 
 export { buildDiagnosticsBundle } from './diagnostics.js';
