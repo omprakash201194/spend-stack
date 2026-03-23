@@ -9,6 +9,7 @@
 import type {
   Transaction,
   ReviewQueueItem,
+  ReviewQueueStore,
   ReviewResolution,
   ReviewReason,
   ReviewAuditEntry,
@@ -185,4 +186,121 @@ export function buildReviewQueue(
   }
 
   return items;
+}
+
+// ---------------------------------------------------------------------------
+// editReviewItem — intermediate edit tracking
+// ---------------------------------------------------------------------------
+
+/**
+ * Records an intermediate edit on a review queue item without resolving it.
+ *
+ * Returns a new `ReviewQueueItem` — the original is not mutated.
+ * An `"edited"` audit entry is appended so that all changes remain
+ * traceable.
+ *
+ * @throws {Error} if the item has already been resolved.
+ */
+export function editReviewItem(
+  item: ReviewQueueItem,
+  detail: string,
+  options: Pick<ReviewQueueOptions, 'now'> = {},
+): ReviewQueueItem {
+  if (item.resolvedAt !== undefined) {
+    throw new Error(
+      `Review item "${item.id}" is already resolved and cannot be edited`,
+    );
+  }
+
+  const { now = () => new Date().toISOString() } = options;
+
+  const auditEntry = makeAuditEntry('edited', detail, now);
+
+  return {
+    ...item,
+    auditTrail: [...item.auditTrail, auditEntry],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// ReviewQueueStore CRUD helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates an empty ReviewQueueStore.
+ */
+export function createReviewQueueStore(): ReviewQueueStore {
+  return { items: Object.create(null) as Record<string, ReviewQueueItem> };
+}
+
+/**
+ * Adds a ReviewQueueItem to the store.
+ * Returns a new `ReviewQueueStore`; the original is not mutated.
+ *
+ * @throws {Error} if an item with the same ID already exists.
+ */
+export function addItemToStore(
+  store: ReviewQueueStore,
+  item: ReviewQueueItem,
+): ReviewQueueStore {
+  if (Object.hasOwn(store.items, item.id)) {
+    throw new Error(`Review queue item with ID "${item.id}" already exists`);
+  }
+  const items = Object.assign(
+    Object.create(null) as Record<string, ReviewQueueItem>,
+    store.items,
+    { [item.id]: item },
+  );
+  return { items };
+}
+
+/**
+ * Retrieves a ReviewQueueItem by ID, or `undefined` if not found.
+ */
+export function getItemById(
+  store: ReviewQueueStore,
+  id: string,
+): ReviewQueueItem | undefined {
+  return Object.hasOwn(store.items, id) ? store.items[id] : undefined;
+}
+
+/**
+ * Returns all unresolved items in the store (no `resolvedAt`), in the
+ * enumeration order of `store.items`.
+ */
+export function listPendingItems(store: ReviewQueueStore): ReviewQueueItem[] {
+  return Object.values(store.items).filter((item) => item.resolvedAt === undefined);
+}
+
+/**
+ * Returns all resolved items in the store (has `resolvedAt`), in the
+ * enumeration order of `store.items`.
+ */
+export function listResolvedItems(store: ReviewQueueStore): ReviewQueueItem[] {
+  return Object.values(store.items).filter((item) => item.resolvedAt !== undefined);
+}
+
+/**
+ * Applies a resolution to the item identified by `id` inside the store.
+ * Returns a new `ReviewQueueStore`; the original is not mutated.
+ *
+ * @throws {Error} if the item is not found.
+ * @throws {Error} if the item is already resolved (delegated to `resolveReviewItem`).
+ */
+export function resolveItemInStore(
+  store: ReviewQueueStore,
+  id: string,
+  resolution: ReviewResolution,
+): ReviewQueueStore {
+  const item = getItemById(store, id);
+  if (item === undefined) {
+    throw new Error(`Review queue item with ID "${id}" not found`);
+  }
+  const resolved = resolveReviewItem(item, resolution);
+  const items = Object.assign(
+    Object.create(null) as Record<string, ReviewQueueItem>,
+    store.items,
+    { [id]: resolved },
+  );
+  return { items };
 }
