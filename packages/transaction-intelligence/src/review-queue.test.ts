@@ -315,6 +315,11 @@ describe('getItemById', () => {
   it('returns undefined for a missing ID', () => {
     expect(getItemById(createReviewQueueStore(), 'rq-missing')).toBeUndefined();
   });
+
+  it('returns undefined for prototype property names (no prototype pollution)', () => {
+    expect(getItemById(createReviewQueueStore(), '__proto__')).toBeUndefined();
+    expect(getItemById(createReviewQueueStore(), 'constructor')).toBeUndefined();
+  });
 });
 
 describe('listPendingItems', () => {
@@ -330,6 +335,25 @@ describe('listPendingItems', () => {
     const pending = listPendingItems(store);
     expect(pending).toHaveLength(1);
     expect(pending[0]?.transactionId).toBe('tx-1');
+  });
+
+  it('returns items sorted by createdAt ascending', () => {
+    const earlier = createReviewItem(
+      makeTx({ id: 'tx-a', confidence: 0.6 }),
+      { now: () => '2024-01-10T08:00:00.000Z' },
+    );
+    const later = createReviewItem(
+      makeTx({ id: 'tx-b', confidence: 0.5 }),
+      { now: () => '2024-01-15T08:00:00.000Z' },
+    );
+
+    // Add in reverse order to confirm sort overrides insertion order
+    let store = createReviewQueueStore();
+    store = addItemToStore(store, later);
+    store = addItemToStore(store, earlier);
+
+    const pending = listPendingItems(store);
+    expect(pending.map((i) => i.transactionId)).toEqual(['tx-a', 'tx-b']);
   });
 
   it('returns an empty array when all items are resolved', () => {

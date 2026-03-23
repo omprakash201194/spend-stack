@@ -250,7 +250,7 @@ export function editReviewItem(
  * ```
  */
 export function createReviewQueueStore(): ReviewQueueStore {
-  return { items: {} };
+  return { items: Object.create(null) as Record<string, ReviewQueueItem> };
 }
 
 /**
@@ -264,10 +264,15 @@ export function addItemToStore(
   store: ReviewQueueStore,
   item: ReviewQueueItem,
 ): ReviewQueueStore {
-  if (store.items[item.id] !== undefined) {
+  if (Object.hasOwn(store.items, item.id)) {
     throw new Error(`Review item "${item.id}" already exists in the store.`);
   }
-  return { ...store, items: { ...store.items, [item.id]: item } };
+  return {
+    ...store,
+    items: Object.assign(Object.create(null) as Record<string, ReviewQueueItem>, store.items, {
+      [item.id]: item,
+    }),
+  };
 }
 
 /**
@@ -279,23 +284,27 @@ export function getItemById(
   store: ReviewQueueStore,
   id: string,
 ): ReviewQueueItem | undefined {
-  return store.items[id];
+  return Object.hasOwn(store.items, id) ? store.items[id] : undefined;
 }
 
 /**
- * Returns all unresolved items in the store, in insertion order.
+ * Returns all unresolved items in the store, sorted by `createdAt` ascending.
  *
  * "Unresolved" means the item has no `resolvedAt` timestamp.
  */
 export function listPendingItems(store: ReviewQueueStore): ReviewQueueItem[] {
-  return Object.values(store.items).filter((item) => item.resolvedAt === undefined);
+  return Object.values(store.items)
+    .filter((item) => item.resolvedAt === undefined)
+    .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
 }
 
 /**
- * Returns all resolved items in the store, in insertion order.
+ * Returns all resolved items in the store, sorted by `createdAt` ascending.
  */
 export function listResolvedItems(store: ReviewQueueStore): ReviewQueueItem[] {
-  return Object.values(store.items).filter((item) => item.resolvedAt !== undefined);
+  return Object.values(store.items)
+    .filter((item) => item.resolvedAt !== undefined)
+    .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
 }
 
 /**
@@ -314,10 +323,15 @@ export function resolveItemInStore(
   id: string,
   resolution: ReviewResolution,
 ): ReviewQueueStore {
-  const item = store.items[id];
-  if (item === undefined) {
+  if (!Object.hasOwn(store.items, id)) {
     throw new Error(`Review item "${id}" not found in the store.`);
   }
+  const item = store.items[id]!;
   const resolved = resolveReviewItem(item, resolution);
-  return { ...store, items: { ...store.items, [id]: resolved } };
+  return {
+    ...store,
+    items: Object.assign(Object.create(null) as Record<string, ReviewQueueItem>, store.items, {
+      [id]: resolved,
+    }),
+  };
 }
