@@ -180,6 +180,56 @@ export interface CategorizationResult {
 }
 
 // ---------------------------------------------------------------------------
+// Transfer Link
+// ---------------------------------------------------------------------------
+
+/**
+ * Who created a transfer link.
+ * `"auto"` means the system detected it; `"manual"` means the user created or
+ * overrode it.
+ */
+export type TransferLinkSource = 'auto' | 'manual';
+
+/**
+ * Lifecycle status of a transfer link.
+ *
+ * - `"confirmed"` – high-confidence automatic match, or user-approved.
+ * - `"pending-review"` – uncertain automatic match awaiting human decision.
+ * - `"rejected"` – user explicitly marked this pair as NOT a transfer.
+ */
+export type TransferLinkStatus = 'confirmed' | 'pending-review' | 'rejected';
+
+/**
+ * An explicit representation of the pairing between a debit transaction on
+ * one account and the corresponding credit transaction on another account
+ * that together constitute an own-account transfer.
+ *
+ * Keeping the link as a first-class entity (rather than just fields on
+ * Transaction) allows it to be confirmed, rejected, or overridden
+ * independently of the transactions themselves.
+ */
+export interface TransferLink {
+  /** Stable unique identifier for this link. */
+  id: string;
+  /** ID of the debit side of the transfer. */
+  debitTransactionId: string;
+  /** ID of the credit side of the transfer. */
+  creditTransactionId: string;
+  /** Confidence score produced by the detector (0–1). */
+  confidence: number;
+  /** Whether the link was created automatically or by the user. */
+  source: TransferLinkSource;
+  /** Current lifecycle status. */
+  status: TransferLinkStatus;
+  /** Human-readable explanation of why these transactions were linked. */
+  reason: string;
+  /** ISO 8601 creation timestamp. */
+  createdAt: string;
+  /** ISO 8601 last-update timestamp. */
+  updatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
 // Review Queue
 // ---------------------------------------------------------------------------
 

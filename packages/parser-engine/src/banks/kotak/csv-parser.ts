@@ -17,14 +17,6 @@ import { parseDate, parseAmount, normalizeDescription, parseCsvRow, splitLines }
 const PARSER_ID = 'kotak-csv-v1';
 const PARSER_VERSION = '1.0.0';
 
-const REQUIRED_HEADERS = [
-  'transaction date',
-  'description',
-  'withdrawal amt',
-  'deposit amt',
-  'closing balance',
-];
-
 interface ColumnMap {
   transactionDate: number;
   description: number;
@@ -69,8 +61,8 @@ export const kotakBankCsvParser: ParserDefinition = {
   detect(content: string): boolean {
     const lines = splitLines(content);
     if (lines.length === 0) return false;
-    const headers = parseCsvRow(lines[0]!).map((h) => h.toLowerCase().trim());
-    return REQUIRED_HEADERS.every((req) => headers.some((h) => h.includes(req)));
+    const headers = parseCsvRow(lines[0]!);
+    return resolveColumns(headers) !== null;
   },
 
   extract(content: string): RawStatementRow[] {

@@ -1,6 +1,6 @@
-import React, { useCallback, useRef, useState } from 'react';
-import { runImportPipeline } from '@spendstack/parser-engine';
-import type { FileType } from '@spendstack/parser-engine';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { runImportPipeline, buildRetentionNotice } from '@spendstack/parser-engine';
+import type { FileType, StatementFileRecord } from '@spendstack/parser-engine';
 import {
   createImportJob,
   transitionJobStatus,
@@ -40,6 +40,7 @@ type ImportPhase =
       metrics: { totalRowsDetected: number; rowsParsed: number; duplicateRowsSkipped: number; rowsFlaggedForReview: number };
       reviewRequired: boolean;
       warnings: string[];
+      statementFile: StatementFileRecord;
     }
   | { kind: 'unsupported'; fileName: string }
   | { kind: 'error'; fileName: string; message: string };
@@ -170,6 +171,7 @@ function ImportView() {
         metrics: result.metrics,
         reviewRequired: result.reviewRequired,
         warnings: result.parserWarnings,
+        statementFile: result.statementFile,
       });
     } catch (err) {
       setPhase({
@@ -250,6 +252,11 @@ function ImportView() {
   const isDragging = phase.kind === 'dragging';
   const isProcessing = phase.kind === 'processing';
   const showDropZone = phase.kind === 'idle' || phase.kind === 'dragging' || phase.kind === 'unsupported';
+  const statementFileForNotice = phase.kind === 'done' ? phase.statementFile : null;
+  const retentionNotice = useMemo(
+    () => (statementFileForNotice ? buildRetentionNotice(statementFileForNotice) : null),
+    [statementFileForNotice],
+  );
 
   return (
     <div className="view">
@@ -343,6 +350,17 @@ function ImportView() {
             <p className="import-review-notice" role="alert">
               ⚠ Some transactions need review before they can be finalised.
             </p>
+          )}
+
+          {/* Retention notice — shown once after each successful import */}
+          {retentionNotice && (
+            <div className="import-retention-notice" role="note" aria-label="File retention information">
+              <span className="import-retention-notice__icon" aria-hidden="true">🗂</span>
+              <div className="import-retention-notice__content">
+                <strong className="import-retention-notice__title">{retentionNotice.title}</strong>
+                <p className="import-retention-notice__body">{retentionNotice.body}</p>
+              </div>
+            </div>
           )}
 
           {phase.warnings.length > 0 && (

@@ -125,6 +125,52 @@ describe('detectTransfer', () => {
     expect(result.isTransfer).toBe(false);
   });
 
+  it('populates peerId for uncertain matches above reviewThreshold', () => {
+    // Score = 0.6 (base) + 0.15 (1-day delta) = 0.75; between reviewThreshold
+    // (0.5) and minConfidence (0.8) → uncertain match: isTransfer=false but
+    // peerId is populated so callers can route it to the review queue.
+    const tx = makeTx({
+      type: 'debit',
+      amount: 5000,
+      date: '2024-01-15',
+      normalizedDescription: 'SALARY',
+    });
+    const candidate = makeTx({
+      id: 'tx-2',
+      accountId: 'acc-2',
+      type: 'credit',
+      amount: 5000,
+      date: '2024-01-16',
+      normalizedDescription: 'SALARY',
+    });
+    const result = detectTransfer(tx, [candidate], { minConfidence: 0.8, reviewThreshold: 0.5 });
+    expect(result.isTransfer).toBe(false);
+    expect(result.peerId).toBe('tx-2');
+    expect(result.confidence).toBe(0.75);
+    expect(result.reason).toMatch(/uncertain/i);
+  });
+
+  it('does not populate peerId when confidence is below reviewThreshold', () => {
+    // Score = 0.6 (base) + 0.05 (2-day delta) = 0.65; below reviewThreshold 0.7
+    const tx = makeTx({
+      type: 'debit',
+      amount: 5000,
+      date: '2024-01-15',
+      normalizedDescription: 'PURCHASE',
+    });
+    const candidate = makeTx({
+      id: 'tx-2',
+      accountId: 'acc-2',
+      type: 'credit',
+      amount: 5000,
+      date: '2024-01-17',
+      normalizedDescription: 'DEPOSIT',
+    });
+    const result = detectTransfer(tx, [candidate], { minConfidence: 0.8, reviewThreshold: 0.7 });
+    expect(result.isTransfer).toBe(false);
+    expect(result.peerId).toBeUndefined();
+  });
+
   it('includes a human-readable reason in the result', () => {
     const tx = makeTx({ type: 'debit', amount: 5000, date: '2024-01-15' });
     const candidate = makeTx({
