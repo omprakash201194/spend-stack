@@ -7,6 +7,11 @@
  * Date format: DD-MM-YYYY
  * Amount format: plain decimal, commas allowed
  *
+ * Real Bank of Baroda Internet Banking CSV exports may include up to a few
+ * rows of account metadata (account number, date range, etc.) before the
+ * transaction header row.  Both detect() and extract() scan the first
+ * HEADER_SEARCH_LIMIT lines so these preamble rows are handled gracefully.
+ *
  * Parser ID  : bob-csv-v1
  * Parser Ver : 1.0.0
  */
@@ -17,7 +22,12 @@ import { parseDate, parseAmount, normalizeDescription, parseCsvRow, splitLines }
 const PARSER_ID = 'bob-csv-v1';
 const PARSER_VERSION = '1.0.0';
 
-const REQUIRED_HEADERS = ['tran date', 'description', 'debit amount', 'credit amount', 'balance'];
+/**
+ * Maximum number of leading lines to scan when searching for the transaction
+ * header row.  Bank of Baroda CSV exports may include account-number /
+ * date-range rows before the actual column headers.
+ */
+const HEADER_SEARCH_LIMIT = 5;
 
 interface ColumnMap {
   tranDate: number;
@@ -34,8 +44,8 @@ function resolveColumns(headers: string[]): ColumnMap | null {
   const tranDate = lower.findIndex((h) => h.includes('tran date') || h.includes('transaction date'));
   const description = lower.findIndex((h) => h.includes('description') || h.includes('narration') || h.includes('particulars'));
   const refNo = lower.findIndex((h) => h.includes('ref') || h.includes('cheque'));
-  const debitAmount = lower.findIndex((h) => h.includes('debit'));
-  const creditAmount = lower.findIndex((h) => h.includes('credit'));
+  const debitAmount = lower.findIndex((h) => h.includes('debit amount'));
+  const creditAmount = lower.findIndex((h) => h.includes('credit amount'));
   const balance = lower.findIndex((h) => h === 'balance' || h.includes('closing balance'));
 
   if ([tranDate, description, debitAmount, creditAmount, balance].some((i) => i === -1)) {
@@ -52,6 +62,26 @@ function resolveColumns(headers: string[]): ColumnMap | null {
   };
 }
 
+/**
+ * Scans the first HEADER_SEARCH_LIMIT lines of `lines` for the Bank of Baroda
+ * transaction-table header.  Returns the index of that line, or -1 when not
+ * found.
+ *
+ * Uses resolveColumns() for matching so that detect() and extract() rely on
+ * identical column-mapping rules — preventing detect() from returning true for
+ * a line that extract() cannot actually map.
+ */
+function findHeaderLineIndex(lines: string[]): number {
+  const limit = Math.min(lines.length, HEADER_SEARCH_LIMIT);
+  for (let i = 0; i < limit; i++) {
+    const headers = parseCsvRow(lines[i]!);
+    if (resolveColumns(headers) !== null) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 export const bankOfBarodaCsvParser: ParserDefinition = {
   parserId: PARSER_ID,
   bankName: 'bank-of-baroda',
@@ -60,22 +90,21 @@ export const bankOfBarodaCsvParser: ParserDefinition = {
 
   detect(content: string): boolean {
     const lines = splitLines(content);
-    if (lines.length === 0) return false;
-    const headers = parseCsvRow(lines[0]!).map((h) => h.toLowerCase().trim());
-    return REQUIRED_HEADERS.every((req) => headers.some((h) => h.includes(req)));
+    return findHeaderLineIndex(lines) !== -1;
   },
 
   extract(content: string): RawStatementRow[] {
     const lines = splitLines(content);
-    if (lines.length < 2) return [];
+    const headerIdx = findHeaderLineIndex(lines);
+    if (headerIdx === -1) return [];
 
-    const headers = parseCsvRow(lines[0]!);
+    const headers = parseCsvRow(lines[headerIdx]!);
     const cols = resolveColumns(headers);
     if (!cols) return [];
 
     const rows: RawStatementRow[] = [];
 
-    for (let i = 1; i < lines.length; i++) {
+    for (let i = headerIdx + 1; i < lines.length; i++) {
       const line = lines[i]!;
       const fields = parseCsvRow(line);
 

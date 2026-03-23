@@ -90,6 +90,7 @@ export {
   createAuditEvent,
   appendAuditEvent,
   formatAuditHistory,
+  queryAuditLog,
   AUDIT_SCHEMA_VERSION,
 } from './audit.js';
 export type {
@@ -97,6 +98,7 @@ export type {
   AuditEventType,
   AuditEvent,
   AuditLog,
+  AuditQueryOptions,
 } from './audit.js';
 
 export { buildDiagnosticsBundle } from './diagnostics.js';
@@ -125,23 +127,104 @@ export type {
 } from './import-job.js';
 
 export {
+  createCategorizationRule,
+  createRuleStore,
+  addRuleToStore,
+  removeRuleFromStore,
+  updateRuleInStore,
+  getRuleById,
+  listRules,
+  listActiveRules,
+  deactivateRule,
+  reorderRule,
+} from './categorization-rule.js';
+export type {
+  CategorizationRuleId,
+  RuleConditionField,
+  RuleConditionOperator,
+  RuleCondition,
+  RuleMatchMode,
+  RuleSource,
+  CategorizationRule,
+  CreateCategorizationRuleParams,
+  UpdateCategorizationRuleParams,
+  RuleStore,
+} from './categorization-rule.js';
+
+export {
+  DEFAULT_RETENTION_DAYS,
+  createStatementFileRecord,
+  computeDeleteAfterAt,
+  isExpired,
+  findExpiredFiles,
+  markDeleted,
+  markDeletionFailed,
+  markSkipped,
+  runCleanup,
+  reconcileOnStartup,
+} from './statement-file-lifecycle.js';
+export type {
+  RetentionPolicy,
+  DeletionStatus,
+  StatementFileRecord,
+  FileDeleter,
+  RunCleanupOptions,
+  CleanupResult,
+} from './statement-file-lifecycle.js';
+
+export {
   computeBalanceSummary,
   computeCashflowSummary,
+  computeOverallBalanceSummary,
+  computeOverallCashflowSummary,
   createInsightConsent,
   revokeInsightConsent,
   hasInsightConsent,
   canRunAiInsights,
   INSIGHT_CONSENT_SCHEMA_VERSION,
+  createConsentStore,
+  addConsentToStore,
+  revokeConsentInStore,
+  getActiveConsent,
+  listUserConsents,
 } from './insights.js';
 export type {
   InsightTransaction,
+  SummaryPeriod,
   BalanceSummary,
   BalanceSummaryOptions,
   CashflowSummary,
   CashflowSummaryOptions,
+  OverallBalanceSummary,
+  OverallBalanceSummaryOptions,
+  OverallCashflowSummary,
+  OverallCashflowSummaryOptions,
   InsightConsentSchemaVersion,
   InsightConsentScope,
   InsightDataScope,
   InsightConsent,
   CreateInsightConsentParams,
+  ConsentStore,
 } from './insights.js';
+
+export {
+  buildTraceStore,
+  getTraceForTransaction,
+  getTracesForFile,
+  getTraceBySourceRef,
+  hasTraceData,
+  getImportJobIds,
+  formatTraceForDisplay,
+} from './source-traceability.js';
+export type { SourceTraceRecord, TraceStore } from './source-traceability.js';
+
+export { createTransaction, validateTransaction, isValidTransaction } from './transaction.js';
+export type {
+  TransactionType,
+  TransactionStatus,
+  Transaction,
+  CreateTransactionParams,
+  TransactionValidationErrorCode,
+  TransactionValidationError,
+  TransactionValidationResult,
+} from './transaction.js';

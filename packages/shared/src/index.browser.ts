@@ -20,3 +20,14 @@ export type {
   CreateImportJobParams,
   ImportJob,
 } from './import-job.js';
+
+export { createTransaction, validateTransaction, isValidTransaction } from './transaction.js';
+export type {
+  TransactionType,
+  TransactionStatus,
+  Transaction,
+  CreateTransactionParams,
+  TransactionValidationErrorCode,
+  TransactionValidationError,
+  TransactionValidationResult,
+} from './transaction.js';

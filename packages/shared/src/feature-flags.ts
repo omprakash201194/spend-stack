@@ -27,6 +27,8 @@ export const FEATURE_FLAGS = {
   pinUnlock: false,
   /** Enable relationship-based privacy controls inside a family workspace. */
   familyPrivacyControls: false,
+  /** Enable the diagnostics bundle export feature (support/debugging tool). */
+  diagnosticsExport: false,
   /** Enable the review queue for low-confidence transactions. */
   reviewQueue: false,
 } as const;
