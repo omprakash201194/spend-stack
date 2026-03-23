@@ -29,6 +29,8 @@ export const FEATURE_FLAGS = {
   familyPrivacyControls: false,
   /** Enable the diagnostics bundle export feature (support/debugging tool). */
   diagnosticsExport: false,
+  /** Enable the review queue for low-confidence transactions. */
+  reviewQueue: false,
 } as const;
 
 export type FeatureFlagName = keyof typeof FEATURE_FLAGS;

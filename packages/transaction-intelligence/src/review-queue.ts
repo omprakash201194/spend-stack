@@ -9,6 +9,7 @@
 import type {
   Transaction,
   ReviewQueueItem,
+  ReviewQueueStore,
   ReviewResolution,
   ReviewReason,
   ReviewAuditEntry,
@@ -185,4 +186,119 @@ export function buildReviewQueue(
   }
 
   return items;
+}
+
+// ---------------------------------------------------------------------------
+// editReviewItem
+// ---------------------------------------------------------------------------
+
+/**
+ * Appends an `"edited"` audit entry to a review item without resolving it.
+ * Returns a new `ReviewQueueItem`; the original is not mutated.
+ *
+ * Useful for tracking intermediate reviewer edits (e.g., updating a
+ * transaction's category before a final resolution decision).
+ *
+ * @throws {Error} if the item has already been resolved.
+ */
+export function editReviewItem(
+  item: ReviewQueueItem,
+  detail: string,
+  options: Pick<ReviewQueueOptions, 'now'> = {},
+): ReviewQueueItem {
+  if (item.resolvedAt !== undefined) {
+    throw new Error(
+      `Review item "${item.id}" is already resolved and cannot be edited (resolved at ${item.resolvedAt})`,
+    );
+  }
+
+  const now = options.now ?? (() => new Date().toISOString());
+  const auditEntry = makeAuditEntry('edited', detail, now);
+
+  return {
+    ...item,
+    auditTrail: [...item.auditTrail, auditEntry],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// ReviewQueueStore CRUD helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates an empty `ReviewQueueStore`.
+ *
+ * @example
+ * ```ts
+ * const store = createReviewQueueStore();
+ * ```
+ */
+export function createReviewQueueStore(): ReviewQueueStore {
+  return { items: Object.create(null) as Record<string, ReviewQueueItem> };
+}
+
+/**
+ * Adds an item to the store.
+ * Returns a new `ReviewQueueStore`; the original is not mutated.
+ *
+ * @throws {Error} if an item with the same ID already exists in the store.
+ */
+export function addItemToStore(store: ReviewQueueStore, item: ReviewQueueItem): ReviewQueueStore {
+  if (Object.hasOwn(store.items, item.id)) {
+    throw new Error(`Review queue item with ID "${item.id}" already exists in the store`);
+  }
+  const items = Object.assign(Object.create(null) as Record<string, ReviewQueueItem>, store.items, {
+    [item.id]: item,
+  });
+  return { items };
+}
+
+/**
+ * Returns the item with the given ID, or `undefined` if not found.
+ */
+export function getItemById(store: ReviewQueueStore, id: string): ReviewQueueItem | undefined {
+  return Object.hasOwn(store.items, id) ? store.items[id] : undefined;
+}
+
+/**
+ * Returns all items in the store that have not yet been resolved.
+ *
+ * Items are returned in enumeration order (insertion order for string keys).
+ */
+export function listPendingItems(store: ReviewQueueStore): ReviewQueueItem[] {
+  return Object.values(store.items).filter((item) => item.resolvedAt === undefined);
+}
+
+/**
+ * Returns all items in the store that have been resolved.
+ *
+ * Items are returned in enumeration order (insertion order for string keys).
+ */
+export function listResolvedItems(store: ReviewQueueStore): ReviewQueueItem[] {
+  return Object.values(store.items).filter((item) => item.resolvedAt !== undefined);
+}
+
+/**
+ * Resolves the item with the given ID in the store.
+ * Returns a new `ReviewQueueStore` with the item updated; the original is not mutated.
+ *
+ * @throws {Error} if no item with the given ID exists.
+ * @throws {Error} if the item has already been resolved.
+ */
+export function resolveItemInStore(
+  store: ReviewQueueStore,
+  id: string,
+  resolution: ReviewResolution,
+): ReviewQueueStore {
+  if (!Object.hasOwn(store.items, id)) {
+    throw new Error(`Review queue item with ID "${id}" not found in the store`);
+  }
+
+  const existing = store.items[id] as ReviewQueueItem;
+  const resolved = resolveReviewItem(existing, resolution);
+
+  const items = Object.assign(Object.create(null) as Record<string, ReviewQueueItem>, store.items, {
+    [id]: resolved,
+  });
+  return { items };
 }

@@ -14,6 +14,7 @@ const MOCK_FLAGS: Record<FeatureFlagName, FeatureFlagValue> = {
   pinUnlock: false,
   familyPrivacyControls: false,
   diagnosticsExport: false,
+  reviewQueue: false,
 };
 
 // ── buildDiagnosticsBundle ────────────────────────────────────────────────────
