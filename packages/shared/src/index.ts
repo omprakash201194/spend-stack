@@ -90,6 +90,7 @@ export {
   createAuditEvent,
   appendAuditEvent,
   formatAuditHistory,
+  queryAuditLog,
   AUDIT_SCHEMA_VERSION,
 } from './audit.js';
 export type {
@@ -97,6 +98,7 @@ export type {
   AuditEventType,
   AuditEvent,
   AuditLog,
+  AuditQueryOptions,
 } from './audit.js';
 
 export { buildDiagnosticsBundle } from './diagnostics.js';
@@ -145,3 +147,25 @@ export type {
   InsightConsent,
   CreateInsightConsentParams,
 } from './insights.js';
+
+export {
+  DEFAULT_RETENTION_DAYS,
+  createStatementFileRecord,
+  computeDeleteAfterAt,
+  isExpired,
+  findExpiredFiles,
+  markDeleted,
+  markDeletionFailed,
+  markSkipped,
+  runCleanup,
+  reconcileOnStartup,
+} from './statement-file-lifecycle.js';
+export type {
+  RetentionPolicy,
+  DeletionStatus,
+  StatementFileRecord,
+  FileDeleter,
+  RunCleanupOptions,
+  CleanupOutcome,
+  CleanupResult,
+} from './statement-file-lifecycle.js';
