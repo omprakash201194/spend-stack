@@ -63,6 +63,8 @@ export type AuditEventType =
   | 'insight.balance_summary_computed'
   | 'insight.cashflow_summary_computed'
   | 'insight.ai_insights_requested'
+  // Diagnostics events
+  | 'diagnostics.bundle_exported'
   // Traceability events
   | 'trace.queried';
 

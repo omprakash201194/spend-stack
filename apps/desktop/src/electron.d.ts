@@ -7,6 +7,16 @@
 
 import type { FeatureFlagName } from '@spendstack/shared';
 
+export interface DiagnosticsExportResult {
+  success: boolean;
+  /** True when the user dismissed the save dialog without choosing a path. */
+  canceled?: boolean;
+  /** Absolute path of the file that was written (present on success). */
+  filePath?: string;
+  /** Human-readable error description (present on failure). */
+  error?: string;
+}
+
 export interface ElectronAPI {
   /**
    * Subscribe to a timestamped message sent by the main process after the
@@ -20,6 +30,12 @@ export interface ElectronAPI {
    * Flags are resolved in priority order: runtime overrides → env var → defaults.
    */
   getFlags: () => Promise<Record<FeatureFlagName, boolean>>;
+
+  /**
+   * Opens a native save dialog and exports a diagnostics bundle to the chosen
+   * path.  Returns the result including success/failure and the written path.
+   */
+  exportDiagnostics: () => Promise<DiagnosticsExportResult>;
 }
 
 declare global {
