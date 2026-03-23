@@ -43,21 +43,30 @@ export type AuditEventType =
   | 'import.completed'
   | 'import.failed'
   | 'import.cancelled'
+  // File lifecycle events
+  | 'file.retained'
+  | 'file.deleted'
+  | 'file.deletion_failed'
+  | 'file.cleanup_run_completed'
   // Transaction events
   | 'transaction.reviewed'
   | 'transaction.categorized'
   | 'transaction.flagged'
+  // Categorization rule events
+  | 'categorization.rule_created'
+  | 'categorization.rule_updated'
+  | 'categorization.rule_deactivated'
+  | 'categorization.rule_deleted'
   // Insight & analytics events
   | 'insight.consent_granted'
   | 'insight.consent_revoked'
   | 'insight.balance_summary_computed'
   | 'insight.cashflow_summary_computed'
   | 'insight.ai_insights_requested'
-  // File lifecycle events
-  | 'file.retained'
-  | 'file.deleted'
-  | 'file.deletion_failed'
-  | 'file.cleanup_run_completed';
+  // Diagnostics events
+  | 'diagnostics.bundle_exported'
+  // Traceability events
+  | 'trace.queried';
 
 /**
  * A single audit event.

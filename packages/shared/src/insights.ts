@@ -45,6 +45,21 @@ export interface InsightTransaction {
 }
 
 // ---------------------------------------------------------------------------
+// Period
+// ---------------------------------------------------------------------------
+
+/**
+ * An inclusive date range used to restrict summary computations to a defined
+ * window of time.
+ */
+export interface SummaryPeriod {
+  /** ISO 8601 date string (YYYY-MM-DD) – first day of the period (inclusive). */
+  from: string;
+  /** ISO 8601 date string (YYYY-MM-DD) – last day of the period (inclusive). */
+  to: string;
+}
+
+// ---------------------------------------------------------------------------
 // Balance Summary
 // ---------------------------------------------------------------------------
 
@@ -91,6 +106,11 @@ export interface BalanceSummaryOptions {
    * balance fields or fall back to 0.
    */
   openingBalance?: number;
+  /**
+   * Optional date range to restrict which transactions are included.
+   * Transactions outside this range (by date) are ignored.
+   */
+  period?: SummaryPeriod;
 }
 
 /**
@@ -111,8 +131,10 @@ export function computeBalanceSummary(
   transactions: InsightTransaction[],
   options: BalanceSummaryOptions = {},
 ): BalanceSummary {
+  const { period } = options;
   const accountTxns = transactions
     .filter((t) => t.accountId === accountId)
+    .filter((t) => !period || (t.date >= period.from && t.date <= period.to))
     .sort((a, b) => a.date.localeCompare(b.date));
 
   if (accountTxns.length === 0) {
@@ -233,6 +255,11 @@ export interface CashflowSummaryOptions {
    * outflow totals (debits only). Defaults to `false`.
    */
   includeCategoryBreakdown?: boolean;
+  /**
+   * Optional date range to restrict which transactions are included.
+   * Transactions outside this range (by date) are ignored.
+   */
+  period?: SummaryPeriod;
 }
 
 /**
@@ -254,8 +281,10 @@ export function computeCashflowSummary(
   transactions: InsightTransaction[],
   options: CashflowSummaryOptions = {},
 ): CashflowSummary {
+  const { period } = options;
   const accountTxns = transactions
     .filter((t) => t.accountId === accountId)
+    .filter((t) => !period || (t.date >= period.from && t.date <= period.to))
     .sort((a, b) => a.date.localeCompare(b.date));
 
   if (accountTxns.length === 0) {
@@ -329,6 +358,294 @@ export function computeCashflowSummary(
   }
 
   return summary;
+}
+
+// ---------------------------------------------------------------------------
+// Overall Balance Summary (multi-account)
+// ---------------------------------------------------------------------------
+
+/**
+ * Aggregated balance summary across all accounts in a dataset.
+ *
+ * Each account is summarised individually and the results are combined.
+ * All accounts must share the same currency.
+ */
+export interface OverallBalanceSummary {
+  /** ISO 4217 currency code shared by all accounts. */
+  currency: string;
+  /** Sum of opening balances across all accounts. */
+  totalOpeningBalance: number;
+  /** Sum of closing balances across all accounts. */
+  totalClosingBalance: number;
+  /** Sum of all debit amounts across all accounts. */
+  totalDebits: number;
+  /** Sum of all credit amounts across all accounts. */
+  totalCredits: number;
+  /** Total number of transactions across all accounts. */
+  transactionCount: number;
+  /** ISO 8601 date of the earliest transaction across all accounts. */
+  periodStart: string;
+  /** ISO 8601 date of the latest transaction across all accounts. */
+  periodEnd: string;
+  /** ISO 8601 UTC timestamp when this summary was computed. */
+  computedAt: string;
+  /** Per-account balance summaries keyed by `accountId`. */
+  byAccount: Record<string, BalanceSummary>;
+}
+
+/** Options for {@link computeOverallBalanceSummary}. */
+export interface OverallBalanceSummaryOptions {
+  /**
+   * Optional date range to restrict which transactions are included.
+   * Applied uniformly across all accounts.
+   */
+  period?: SummaryPeriod;
+  /**
+   * Known opening balance per account, keyed by `accountId`.
+   * Values are forwarded to the per-account {@link computeBalanceSummary} call.
+   */
+  openingBalances?: Record<string, number>;
+}
+
+/**
+ * Computes an aggregated balance summary across all accounts found in the
+ * transaction list.
+ *
+ * Each distinct `accountId` is summarised individually via
+ * {@link computeBalanceSummary}, then the results are aggregated into totals.
+ * All transactions must share the same currency; mixed currencies cause a
+ * throw.
+ *
+ * @example
+ * ```ts
+ * const overall = computeOverallBalanceSummary(transactions, {
+ *   period: { from: '2024-01-01', to: '2024-03-31' },
+ *   openingBalances: { 'acct-1': 10000, 'acct-2': 5000 },
+ * });
+ * console.log(overall.totalClosingBalance);
+ * ```
+ */
+export function computeOverallBalanceSummary(
+  transactions: InsightTransaction[],
+  options: OverallBalanceSummaryOptions = {},
+): OverallBalanceSummary {
+  const accountIds = [...new Set(transactions.map((t) => t.accountId))];
+
+  if (accountIds.length === 0) {
+    return {
+      currency: 'UNKNOWN',
+      totalOpeningBalance: 0,
+      totalClosingBalance: 0,
+      totalDebits: 0,
+      totalCredits: 0,
+      transactionCount: 0,
+      periodStart: '',
+      periodEnd: '',
+      computedAt: new Date().toISOString(),
+      byAccount: {},
+    };
+  }
+
+  const currencies = new Set(transactions.map((t) => t.currency));
+  if (currencies.size > 1) {
+    throw new Error(
+      `computeOverallBalanceSummary: mixed currencies detected: ${[...currencies].join(', ')}`,
+    );
+  }
+
+  const { period, openingBalances = {} } = options;
+  const byAccount: Record<string, BalanceSummary> = {};
+
+  let totalOpeningBalance = 0;
+  let totalClosingBalance = 0;
+  let totalDebits = 0;
+  let totalCredits = 0;
+  let transactionCount = 0;
+  let periodStart = '';
+  let periodEnd = '';
+
+  for (const accountId of accountIds) {
+    const summary = computeBalanceSummary(accountId, transactions, {
+      period,
+      openingBalance: openingBalances[accountId],
+    });
+    byAccount[accountId] = summary;
+
+    if (summary.transactionCount > 0) {
+      totalOpeningBalance += summary.openingBalance;
+      totalClosingBalance += summary.closingBalance;
+      totalDebits += summary.totalDebits;
+      totalCredits += summary.totalCredits;
+      transactionCount += summary.transactionCount;
+
+      if (!periodStart || summary.periodStart < periodStart) {
+        periodStart = summary.periodStart;
+      }
+      if (!periodEnd || summary.periodEnd > periodEnd) {
+        periodEnd = summary.periodEnd;
+      }
+    }
+  }
+
+  return {
+    currency: [...currencies][0]!,
+    totalOpeningBalance,
+    totalClosingBalance,
+    totalDebits,
+    totalCredits,
+    transactionCount,
+    periodStart,
+    periodEnd,
+    computedAt: new Date().toISOString(),
+    byAccount,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Overall Cashflow Summary (multi-account)
+// ---------------------------------------------------------------------------
+
+/**
+ * Aggregated cashflow summary across all accounts in a dataset.
+ *
+ * Each account is summarised individually and the results are combined.
+ * Own-account transfers are excluded from inflow / outflow just as in the
+ * per-account computation. All accounts must share the same currency.
+ */
+export interface OverallCashflowSummary {
+  /** ISO 4217 currency code shared by all accounts. */
+  currency: string;
+  /** Sum of all non-transfer credit amounts across all accounts. */
+  totalInflow: number;
+  /** Sum of all non-transfer debit amounts across all accounts. */
+  totalOutflow: number;
+  /** `totalInflow - totalOutflow`. Positive = surplus, negative = deficit. */
+  netCashflow: number;
+  /** Total non-transfer transaction count across all accounts. */
+  transactionCount: number;
+  /**
+   * Total number of transfer-marked transaction entries across all accounts.
+   * When both legs of a transfer are present, each leg is counted once.
+   */
+  transferCount: number;
+  /** ISO 8601 date of the earliest transaction across all accounts. */
+  periodStart: string;
+  /** ISO 8601 date of the latest transaction across all accounts. */
+  periodEnd: string;
+  /** ISO 8601 UTC timestamp when this summary was computed. */
+  computedAt: string;
+  /** Per-account cashflow summaries keyed by `accountId`. */
+  byAccount: Record<string, CashflowSummary>;
+  /**
+   * Optional per-category outflow breakdown (all accounts combined).
+   * Only populated when `includeCategoryBreakdown` is `true`.
+   */
+  byCategory?: Record<string, number>;
+}
+
+/** Options for {@link computeOverallCashflowSummary}. */
+export type OverallCashflowSummaryOptions = CashflowSummaryOptions;
+
+/**
+ * Computes an aggregated cashflow summary across all accounts found in the
+ * transaction list.
+ *
+ * Each distinct `accountId` is summarised individually via
+ * {@link computeCashflowSummary}, then the results are aggregated into totals.
+ * All transactions must share the same currency; mixed currencies cause a
+ * throw.
+ *
+ * @example
+ * ```ts
+ * const overall = computeOverallCashflowSummary(transactions, {
+ *   period: { from: '2024-01-01', to: '2024-03-31' },
+ *   includeCategoryBreakdown: true,
+ * });
+ * console.log(overall.netCashflow);
+ * ```
+ */
+export function computeOverallCashflowSummary(
+  transactions: InsightTransaction[],
+  options: OverallCashflowSummaryOptions = {},
+): OverallCashflowSummary {
+  const accountIds = [...new Set(transactions.map((t) => t.accountId))];
+
+  if (accountIds.length === 0) {
+    return {
+      currency: 'UNKNOWN',
+      totalInflow: 0,
+      totalOutflow: 0,
+      netCashflow: 0,
+      transactionCount: 0,
+      transferCount: 0,
+      periodStart: '',
+      periodEnd: '',
+      computedAt: new Date().toISOString(),
+      byAccount: {},
+    };
+  }
+
+  const currencies = new Set(transactions.map((t) => t.currency));
+  if (currencies.size > 1) {
+    throw new Error(
+      `computeOverallCashflowSummary: mixed currencies detected: ${[...currencies].join(', ')}`,
+    );
+  }
+
+  const { includeCategoryBreakdown = false } = options;
+  const byAccount: Record<string, CashflowSummary> = {};
+  const combinedByCategory: Record<string, number> = {};
+
+  let totalInflow = 0;
+  let totalOutflow = 0;
+  let transactionCount = 0;
+  let transferCount = 0;
+  let periodStart = '';
+  let periodEnd = '';
+
+  for (const accountId of accountIds) {
+    const summary = computeCashflowSummary(accountId, transactions, options);
+    byAccount[accountId] = summary;
+
+    totalInflow += summary.totalInflow;
+    totalOutflow += summary.totalOutflow;
+    transactionCount += summary.transactionCount;
+    transferCount += summary.transferCount;
+
+    if (summary.transactionCount > 0 || summary.transferCount > 0) {
+      if (!periodStart || summary.periodStart < periodStart) {
+        periodStart = summary.periodStart;
+      }
+      if (!periodEnd || summary.periodEnd > periodEnd) {
+        periodEnd = summary.periodEnd;
+      }
+    }
+
+    if (includeCategoryBreakdown && summary.byCategory) {
+      for (const [key, amount] of Object.entries(summary.byCategory)) {
+        combinedByCategory[key] = (combinedByCategory[key] ?? 0) + amount;
+      }
+    }
+  }
+
+  const result: OverallCashflowSummary = {
+    currency: [...currencies][0]!,
+    totalInflow,
+    totalOutflow,
+    netCashflow: totalInflow - totalOutflow,
+    transactionCount,
+    transferCount,
+    periodStart,
+    periodEnd,
+    computedAt: new Date().toISOString(),
+    byAccount,
+  };
+
+  if (includeCategoryBreakdown) {
+    result.byCategory = combinedByCategory;
+  }
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -486,4 +803,137 @@ export function hasInsightConsent(consent: InsightConsent, scope: InsightConsent
  */
 export function canRunAiInsights(consent: InsightConsent): boolean {
   return hasInsightConsent(consent, 'ai_insights');
+}
+
+// ---------------------------------------------------------------------------
+// Consent Store
+// ---------------------------------------------------------------------------
+
+/**
+ * An in-memory store that holds consent records for all users.
+ *
+ * Each consent grant or revocation updates the corresponding record in-place;
+ * the store itself does not retain a full historical log of changes. If a
+ * complete audit history is required, callers should persist consent events
+ * to an external durable store.
+ *
+ * Records are stored in insertion order (oldest first). Queries always return
+ * new arrays so callers cannot mutate internal state.
+ *
+ * Designed for use in the local application layer; persist to SQLite via the
+ * database package for durability.
+ */
+export interface ConsentStore {
+  /** All consent records in insertion order (oldest first). */
+  readonly records: readonly InsightConsent[];
+}
+
+/**
+ * Creates an empty `ConsentStore` with no records.
+ *
+ * @example
+ * ```ts
+ * const store = createConsentStore();
+ * ```
+ */
+export function createConsentStore(): ConsentStore {
+  return { records: [] };
+}
+
+/**
+ * Appends a consent record to the store.
+ * Returns a new `ConsentStore`; the original is not mutated.
+ * Throws if a record with the same ID already exists.
+ *
+ * @example
+ * ```ts
+ * const consent = createInsightConsent({ userId: 'u1', scopes: ['ai_insights'], granted: true });
+ * const store = addConsentToStore(createConsentStore(), consent);
+ * ```
+ */
+export function addConsentToStore(store: ConsentStore, consent: InsightConsent): ConsentStore {
+  if (store.records.some((r) => r.id === consent.id)) {
+    throw new Error(`Consent record with ID "${consent.id}" already exists in the store`);
+  }
+  return { records: [...store.records, consent] };
+}
+
+/**
+ * Records a revocation for an existing consent record in the store.
+ * Returns a new `ConsentStore` with the consent updated to `granted: false`
+ * and `revokedAt` set to the current timestamp; the original store is not
+ * mutated.
+ *
+ * Throws if no consent with the given ID exists in the store.
+ *
+ * @example
+ * ```ts
+ * const store2 = revokeConsentInStore(store, consent.id);
+ * // store2 records[n].granted === false
+ * ```
+ */
+export function revokeConsentInStore(store: ConsentStore, consentId: string): ConsentStore {
+  const index = store.records.findIndex((r) => r.id === consentId);
+  if (index === -1) {
+    throw new Error(`Consent record with ID "${consentId}" not found in the store`);
+  }
+  const existing = store.records[index]!;
+  // Make revocation idempotent: if the consent is already revoked/denied,
+  // leave the original record (and its original revokedAt timestamp) intact.
+  if (existing.granted === false || existing.revokedAt !== null) {
+    return store;
+  }
+  const updated = revokeInsightConsent(existing);
+  const records = [...store.records.slice(0, index), updated, ...store.records.slice(index + 1)];
+  return { records };
+}
+
+/**
+ * Returns the most recently recorded **active** consent for a given user and
+ * scope, or `undefined` when no active consent exists.
+ *
+ * "Active" means `granted === true` and `revokedAt === null`.
+ *
+ * Only the latest matching active record is returned. If the user has
+ * previously been granted and then revoked consent for a scope, and no new
+ * grant has been recorded, this function returns `undefined`.
+ *
+ * @example
+ * ```ts
+ * const active = getActiveConsent(store, 'user-1', 'ai_insights');
+ * if (active) {
+ *   runAiInsightPipeline();
+ * }
+ * ```
+ */
+export function getActiveConsent(
+  store: ConsentStore,
+  userId: string,
+  scope: InsightConsentScope,
+): InsightConsent | undefined {
+  // Iterate in reverse to find the most recent record first
+  for (let i = store.records.length - 1; i >= 0; i--) {
+    const record = store.records[i]!;
+    if (record.userId === userId && record.scopes.includes(scope) && hasInsightConsent(record, scope)) {
+      return record;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Returns all consent records for a given user in insertion order (oldest
+ * first). This is the full audit trail of every grant and revocation made by
+ * the user.
+ *
+ * Returns an empty array when no records exist for the user.
+ *
+ * @example
+ * ```ts
+ * const history = listUserConsents(store, 'user-1');
+ * // history[0] is the oldest recorded consent decision
+ * ```
+ */
+export function listUserConsents(store: ConsentStore, userId: string): InsightConsent[] {
+  return store.records.filter((r) => r.userId === userId);
 }
