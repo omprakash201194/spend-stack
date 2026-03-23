@@ -1,9 +1,16 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createLogger, flags } from '@spendstack/shared';
-import { createFileLogSink } from '@spendstack/infrastructure';
+import {
+  createLogger,
+  flags,
+  buildDiagnosticsBundle,
+  appendAuditEvent,
+  createAuditEvent,
+} from '@spendstack/shared';
+import type { AuditLog } from '@spendstack/shared';
+import { createFileLogSink, writeDiagnosticsBundle } from '@spendstack/infrastructure';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -27,6 +34,17 @@ const log = createLogger({
   context: 'main',
   sink: createFileLogSink({ logDir }),
 });
+
+// In-memory audit log — records key app lifecycle events for inclusion in
+// diagnostics bundles.  Append-only; never mutated in place.
+let auditLog: AuditLog = [];
+
+function recordAudit(type: Parameters<typeof createAuditEvent>[0]['type'], metadata: Record<string, unknown> = {}): void {
+  auditLog = appendAuditEvent(
+    auditLog,
+    createAuditEvent({ type, actorId: 'system', resourceType: 'app', resourceId: 'main', metadata }),
+  );
+}
 
 let win: BrowserWindow | null = null;
 
@@ -146,6 +164,35 @@ app.on('activate', () => {
 
 // Expose all resolved feature flags to the renderer process.
 ipcMain.handle('get-feature-flags', () => flags.getAll());
+
+// Export a diagnostics bundle to a user-chosen file path.
+ipcMain.handle('export-diagnostics', async () => {
+  const { filePath, canceled } = await dialog.showSaveDialog({
+    title: 'Export Diagnostics Bundle',
+    defaultPath: `spendstack-diagnostics-${new Date().toISOString().slice(0, 10)}.json`,
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+  });
+
+  if (canceled || filePath === undefined) {
+    return { success: false, canceled: true };
+  }
+
+  const bundle = buildDiagnosticsBundle({
+    appVersion: app.getVersion(),
+    featureFlags: flags.getAll(),
+    auditLog,
+    extraContext: { logDir },
+  });
+
+  const result = writeDiagnosticsBundle(bundle, filePath);
+  if (result.success) {
+    log.info('Diagnostics bundle exported', { filePath });
+    recordAudit('diagnostics.bundle_exported', { filePath });
+  } else {
+    log.error('Diagnostics bundle export failed', { error: result.error });
+  }
+  return result;
+});
 
 app.whenReady().then(() => {
   log.info('Application ready', { version: app.getVersion() });

@@ -13,6 +13,7 @@ const MOCK_FLAGS: Record<FeatureFlagName, FeatureFlagValue> = {
   aiInsights: false,
   pinUnlock: false,
   familyPrivacyControls: false,
+  diagnosticsExport: false,
   reviewQueue: false,
 };
 

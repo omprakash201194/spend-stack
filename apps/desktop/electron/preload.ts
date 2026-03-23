@@ -21,4 +21,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
    */
   getFlags: (): Promise<Record<FeatureFlagName, boolean>> =>
     ipcRenderer.invoke('get-feature-flags') as Promise<Record<FeatureFlagName, boolean>>,
+
+  /**
+   * Asks the main process to export a diagnostics bundle to a user-chosen
+   * file path via a native save dialog.
+   */
+  exportDiagnostics: (): Promise<{ success: boolean; canceled?: boolean; filePath?: string; error?: string }> =>
+    ipcRenderer.invoke('export-diagnostics') as Promise<{ success: boolean; canceled?: boolean; filePath?: string; error?: string }>,
 });

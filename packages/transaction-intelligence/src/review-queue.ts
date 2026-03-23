@@ -189,32 +189,47 @@ export function buildReviewQueue(
 }
 
 // ---------------------------------------------------------------------------
-// editReviewItem — intermediate edit tracking
+// Edit tracking
 // ---------------------------------------------------------------------------
 
+/** Options for {@link editReviewItem}. */
+export interface EditReviewItemOptions {
+  /** Optional reviewer notes explaining the edit. */
+  notes?: string;
+  /** Clock function returning the current ISO timestamp. Injected for deterministic tests. */
+  now?: () => string;
+}
+
 /**
- * Records an intermediate edit on a review queue item without resolving it.
+ * Records an intermediate edit on a review item without resolving it.
+ *
+ * Use this when a reviewer amends transaction data (e.g. corrects the
+ * description or amount) as part of the review flow before making a final
+ * approve / reject decision.  Each call appends an `"edited"` entry to the
+ * item's audit trail so that every change is fully traceable.
  *
  * Returns a new `ReviewQueueItem` — the original is not mutated.
- * An `"edited"` audit entry is appended so that all changes remain
- * traceable.
  *
  * @throws {Error} if the item has already been resolved.
  */
 export function editReviewItem(
   item: ReviewQueueItem,
-  detail: string,
-  options: Pick<ReviewQueueOptions, 'now'> = {},
+  userId: string,
+  options: EditReviewItemOptions = {},
 ): ReviewQueueItem {
   if (item.resolvedAt !== undefined) {
     throw new Error(
-      `Review item "${item.id}" is already resolved and cannot be edited`,
+      `Review item "${item.id}" is already resolved — cannot record edit.`,
     );
   }
 
-  const { now = () => new Date().toISOString() } = options;
+  const { notes, now = () => new Date().toISOString() } = options;
 
-  const auditEntry = makeAuditEntry('edited', detail, now);
+  const auditEntry = makeAuditEntry(
+    'edited',
+    `Edited by user: ${userId}${notes ? `; notes: ${notes}` : ''}`,
+    now,
+  );
 
   return {
     ...item,
@@ -223,39 +238,47 @@ export function editReviewItem(
 }
 
 // ---------------------------------------------------------------------------
-// ReviewQueueStore CRUD helpers
+// Review Queue Store
 // ---------------------------------------------------------------------------
 
 /**
- * Creates an empty ReviewQueueStore.
+ * Creates an empty {@link ReviewQueueStore} with no items.
+ *
+ * @example
+ * ```ts
+ * const store = createReviewQueueStore();
+ * ```
  */
 export function createReviewQueueStore(): ReviewQueueStore {
   return { items: Object.create(null) as Record<string, ReviewQueueItem> };
 }
 
 /**
- * Adds a ReviewQueueItem to the store.
+ * Adds a {@link ReviewQueueItem} to the store.
+ *
  * Returns a new `ReviewQueueStore`; the original is not mutated.
  *
- * @throws {Error} if an item with the same ID already exists.
+ * @throws {Error} if an item with the same ID already exists in the store.
  */
 export function addItemToStore(
   store: ReviewQueueStore,
   item: ReviewQueueItem,
 ): ReviewQueueStore {
   if (Object.hasOwn(store.items, item.id)) {
-    throw new Error(`Review queue item with ID "${item.id}" already exists`);
+    throw new Error(`Review item "${item.id}" already exists in the store.`);
   }
-  const items = Object.assign(
-    Object.create(null) as Record<string, ReviewQueueItem>,
-    store.items,
-    { [item.id]: item },
-  );
-  return { items };
+  return {
+    ...store,
+    items: Object.assign(Object.create(null) as Record<string, ReviewQueueItem>, store.items, {
+      [item.id]: item,
+    }),
+  };
 }
 
 /**
- * Retrieves a ReviewQueueItem by ID, or `undefined` if not found.
+ * Retrieves a single {@link ReviewQueueItem} by its ID.
+ *
+ * Returns `undefined` when no item with that ID exists.
  */
 export function getItemById(
   store: ReviewQueueStore,
@@ -265,42 +288,50 @@ export function getItemById(
 }
 
 /**
- * Returns all unresolved items in the store (no `resolvedAt`), in the
- * enumeration order of `store.items`.
+ * Returns all unresolved items in the store, sorted by `createdAt` ascending.
+ *
+ * "Unresolved" means the item has no `resolvedAt` timestamp.
  */
 export function listPendingItems(store: ReviewQueueStore): ReviewQueueItem[] {
-  return Object.values(store.items).filter((item) => item.resolvedAt === undefined);
+  return Object.values(store.items)
+    .filter((item) => item.resolvedAt === undefined)
+    .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
 }
 
 /**
- * Returns all resolved items in the store (has `resolvedAt`), in the
- * enumeration order of `store.items`.
+ * Returns all resolved items in the store, sorted by `createdAt` ascending.
  */
 export function listResolvedItems(store: ReviewQueueStore): ReviewQueueItem[] {
-  return Object.values(store.items).filter((item) => item.resolvedAt !== undefined);
+  return Object.values(store.items)
+    .filter((item) => item.resolvedAt !== undefined)
+    .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
 }
 
 /**
- * Applies a resolution to the item identified by `id` inside the store.
+ * Resolves a review queue item inside the store.
+ *
+ * Delegates to {@link resolveReviewItem} and returns a new
+ * `ReviewQueueStore` containing the updated item.
+ *
  * Returns a new `ReviewQueueStore`; the original is not mutated.
  *
- * @throws {Error} if the item is not found.
- * @throws {Error} if the item is already resolved (delegated to `resolveReviewItem`).
+ * @throws {Error} if no item with `id` exists in the store.
+ * @throws {Error} if the item has already been resolved (re-thrown from {@link resolveReviewItem}).
  */
 export function resolveItemInStore(
   store: ReviewQueueStore,
   id: string,
   resolution: ReviewResolution,
 ): ReviewQueueStore {
-  const item = getItemById(store, id);
-  if (item === undefined) {
-    throw new Error(`Review queue item with ID "${id}" not found`);
+  if (!Object.hasOwn(store.items, id)) {
+    throw new Error(`Review item "${id}" not found in the store.`);
   }
+  const item = store.items[id]!;
   const resolved = resolveReviewItem(item, resolution);
-  const items = Object.assign(
-    Object.create(null) as Record<string, ReviewQueueItem>,
-    store.items,
-    { [id]: resolved },
-  );
-  return { items };
+  return {
+    ...store,
+    items: Object.assign(Object.create(null) as Record<string, ReviewQueueItem>, store.items, {
+      [id]: resolved,
+    }),
+  };
 }

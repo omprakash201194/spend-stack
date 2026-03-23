@@ -81,4 +81,4 @@ export {
   listResolvedItems,
   resolveItemInStore,
 } from './review-queue.js';
-export type { ReviewQueueOptions } from './review-queue.js';
+export type { ReviewQueueOptions, EditReviewItemOptions } from './review-queue.js';

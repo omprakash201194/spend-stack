@@ -286,10 +286,12 @@ export interface ReviewQueueItem {
 }
 
 /**
- * An in-memory store of ReviewQueueItems keyed by item ID.
- * Follows the null-prototype dictionary pattern used throughout the codebase.
+ * An in-memory store of review queue items, keyed by item ID.
+ *
+ * All store mutation helpers return a new `ReviewQueueStore`; the original
+ * is never mutated.  Persistence is the caller's responsibility.
  */
 export interface ReviewQueueStore {
-  /** Dictionary of items keyed by their ID. */
-  items: Record<string, ReviewQueueItem>;
+  /** All review queue items, keyed by item ID. */
+  readonly items: Readonly<Record<string, ReviewQueueItem>>;
 }

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 const SETTINGS_SECTIONS = [
   { title: 'Profile', description: 'Manage your user profile and authentication settings.' },
@@ -8,6 +8,32 @@ const SETTINGS_SECTIONS = [
 ];
 
 function SettingsView() {
+  const [exportStatus, setExportStatus] = useState<'idle' | 'exporting' | 'success' | 'failed' | 'canceled'>('idle');
+  const [exportPath, setExportPath] = useState<string | undefined>(undefined);
+  const [exportError, setExportError] = useState<string | undefined>(undefined);
+
+  async function handleExportDiagnostics() {
+    setExportStatus('exporting');
+    setExportPath(undefined);
+    setExportError(undefined);
+
+    const result = await window.electronAPI?.exportDiagnostics();
+    if (!result) {
+      setExportStatus('failed');
+      setExportError('Electron API unavailable.');
+      return;
+    }
+    if (result.canceled) {
+      setExportStatus('canceled');
+    } else if (result.success) {
+      setExportStatus('success');
+      setExportPath(result.filePath);
+    } else {
+      setExportStatus('failed');
+      setExportError(result.error ?? 'Unknown error.');
+    }
+  }
+
   return (
     <div className="view">
       <header className="view-header">
@@ -23,6 +49,34 @@ function SettingsView() {
           </li>
         ))}
       </ul>
+
+      <section className="settings-diagnostics">
+        <h3 className="settings-section-title">Diagnostics</h3>
+        <p className="settings-section-desc">
+          Export a diagnostics bundle for troubleshooting. The bundle includes app version,
+          platform info, and feature flag state — no raw secrets or personal data.
+        </p>
+        <button
+          className="btn-export-diagnostics"
+          disabled={exportStatus === 'exporting'}
+          onClick={() => { void handleExportDiagnostics(); }}
+        >
+          {exportStatus === 'exporting' ? 'Exporting…' : 'Export Diagnostics Bundle'}
+        </button>
+        {exportStatus === 'success' && (
+          <p className="diagnostics-status diagnostics-status--success">
+            Bundle saved to: {exportPath}
+          </p>
+        )}
+        {exportStatus === 'canceled' && (
+          <p className="diagnostics-status diagnostics-status--canceled">Export canceled.</p>
+        )}
+        {exportStatus === 'failed' && (
+          <p className="diagnostics-status diagnostics-status--error">
+            Export failed: {exportError}
+          </p>
+        )}
+      </section>
     </div>
   );
 }

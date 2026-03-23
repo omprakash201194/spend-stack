@@ -231,47 +231,47 @@ describe('buildReviewQueue', () => {
 // ---------------------------------------------------------------------------
 
 describe('editReviewItem', () => {
-  it('returns a new item with the edited audit entry appended', () => {
+  it('appends an "edited" audit entry to the trail', () => {
     const item = createReviewItem(makeTx({ confidence: 0.6 }), { now: () => FIXED_NOW });
-    const EDIT_NOW = '2024-01-15T13:00:00.000Z';
-    const edited = editReviewItem(item, 'Fixed description', { now: () => EDIT_NOW });
-
+    const edited = editReviewItem(item, 'user-7', { now: () => FIXED_NOW });
     expect(edited.auditTrail).toHaveLength(2);
     expect(edited.auditTrail[1]?.event).toBe('edited');
-    expect(edited.auditTrail[1]?.detail).toBe('Fixed description');
-    expect(edited.auditTrail[1]?.timestamp).toBe(EDIT_NOW);
+  });
+
+  it('records the editor user ID in the audit entry detail', () => {
+    const item = createReviewItem(makeTx({ confidence: 0.6 }), { now: () => FIXED_NOW });
+    const edited = editReviewItem(item, 'user-7', { now: () => FIXED_NOW });
+    expect(edited.auditTrail[1]?.detail).toContain('user-7');
+  });
+
+  it('includes notes in the audit entry detail when provided', () => {
+    const item = createReviewItem(makeTx({ confidence: 0.6 }), { now: () => FIXED_NOW });
+    const edited = editReviewItem(item, 'user-7', { notes: 'Fixed description', now: () => FIXED_NOW });
+    expect(edited.auditTrail[1]?.detail).toContain('Fixed description');
   });
 
   it('does not mutate the original item', () => {
     const item = createReviewItem(makeTx({ confidence: 0.6 }), { now: () => FIXED_NOW });
-    editReviewItem(item, 'Some edit', { now: () => FIXED_NOW });
+    editReviewItem(item, 'user-7', { now: () => FIXED_NOW });
     expect(item.auditTrail).toHaveLength(1);
   });
 
-  it('does not modify resolvedAt or resolution', () => {
+  it('allows multiple edits, each appending a separate audit entry', () => {
     const item = createReviewItem(makeTx({ confidence: 0.6 }), { now: () => FIXED_NOW });
-    const edited = editReviewItem(item, 'edit detail', { now: () => FIXED_NOW });
-    expect(edited.resolvedAt).toBeUndefined();
-    expect(edited.resolution).toBeUndefined();
+    const afterFirst = editReviewItem(item, 'user-7', { now: () => FIXED_NOW });
+    const afterSecond = editReviewItem(afterFirst, 'user-7', { notes: 'Second fix', now: () => FIXED_NOW });
+    expect(afterSecond.auditTrail).toHaveLength(3);
   });
 
-  it('throws when trying to edit an already-resolved item', () => {
+  it('throws when attempting to edit an already-resolved item', () => {
     const item = createReviewItem(makeTx({ confidence: 0.6 }), { now: () => FIXED_NOW });
     const resolved = resolveReviewItem(item, makeResolution());
-    expect(() => editReviewItem(resolved, 'too late')).toThrow(/already resolved/);
-  });
-
-  it('supports multiple sequential edits, each appending to the audit trail', () => {
-    const item = createReviewItem(makeTx({ confidence: 0.6 }), { now: () => FIXED_NOW });
-    const edited1 = editReviewItem(item, 'first edit', { now: () => FIXED_NOW });
-    const edited2 = editReviewItem(edited1, 'second edit', { now: () => FIXED_NOW });
-    expect(edited2.auditTrail).toHaveLength(3);
-    expect(edited2.auditTrail[2]?.detail).toBe('second edit');
+    expect(() => editReviewItem(resolved, 'user-7')).toThrow(/already resolved/);
   });
 });
 
 // ---------------------------------------------------------------------------
-// createReviewQueueStore
+// ReviewQueueStore
 // ---------------------------------------------------------------------------
 
 describe('createReviewQueueStore', () => {
@@ -281,17 +281,13 @@ describe('createReviewQueueStore', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// addItemToStore
-// ---------------------------------------------------------------------------
-
 describe('addItemToStore', () => {
   it('adds an item to the store', () => {
     const store = createReviewQueueStore();
     const item = createReviewItem(makeTx({ id: 'tx-1', confidence: 0.6 }), { now: () => FIXED_NOW });
     const updated = addItemToStore(store, item);
     expect(Object.keys(updated.items)).toHaveLength(1);
-    expect(updated.items[item.id]).toEqual(item);
+    expect(updated.items[item.id]).toBe(item);
   });
 
   it('does not mutate the original store', () => {
@@ -301,7 +297,7 @@ describe('addItemToStore', () => {
     expect(Object.keys(store.items)).toHaveLength(0);
   });
 
-  it('throws when adding a duplicate item ID', () => {
+  it('throws when adding an item with a duplicate ID', () => {
     const store = createReviewQueueStore();
     const item = createReviewItem(makeTx({ id: 'tx-1', confidence: 0.6 }), { now: () => FIXED_NOW });
     const updated = addItemToStore(store, item);
@@ -309,90 +305,110 @@ describe('addItemToStore', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// getItemById
-// ---------------------------------------------------------------------------
-
 describe('getItemById', () => {
   it('returns the item when it exists', () => {
     const item = createReviewItem(makeTx({ id: 'tx-1', confidence: 0.6 }), { now: () => FIXED_NOW });
     const store = addItemToStore(createReviewQueueStore(), item);
-    expect(getItemById(store, item.id)).toEqual(item);
+    expect(getItemById(store, item.id)).toBe(item);
   });
 
-  it('returns undefined when the item does not exist', () => {
-    const store = createReviewQueueStore();
-    expect(getItemById(store, 'nonexistent')).toBeUndefined();
+  it('returns undefined for a missing ID', () => {
+    expect(getItemById(createReviewQueueStore(), 'rq-missing')).toBeUndefined();
+  });
+
+  it('returns undefined for prototype property names (no prototype pollution)', () => {
+    expect(getItemById(createReviewQueueStore(), '__proto__')).toBeUndefined();
+    expect(getItemById(createReviewQueueStore(), 'constructor')).toBeUndefined();
   });
 });
 
-// ---------------------------------------------------------------------------
-// listPendingItems / listResolvedItems
-// ---------------------------------------------------------------------------
-
-describe('listPendingItems / listResolvedItems', () => {
-  it('listPendingItems returns only unresolved items', () => {
-    const item1 = createReviewItem(makeTx({ id: 'tx-1', confidence: 0.4 }), { now: () => FIXED_NOW });
+describe('listPendingItems', () => {
+  it('returns only unresolved items', () => {
+    const item1 = createReviewItem(makeTx({ id: 'tx-1', confidence: 0.6 }), { now: () => FIXED_NOW });
     const item2 = createReviewItem(makeTx({ id: 'tx-2', confidence: 0.5 }), { now: () => FIXED_NOW });
-    let store = addItemToStore(createReviewQueueStore(), item1);
-    store = addItemToStore(store, item2);
-    store = resolveItemInStore(store, item1.id, makeResolution());
+    const resolved2 = resolveReviewItem(item2, makeResolution());
+
+    let store = createReviewQueueStore();
+    store = addItemToStore(store, item1);
+    store = addItemToStore(store, resolved2);
 
     const pending = listPendingItems(store);
     expect(pending).toHaveLength(1);
-    expect(pending[0]?.transactionId).toBe('tx-2');
+    expect(pending[0]?.transactionId).toBe('tx-1');
   });
 
-  it('listResolvedItems returns only resolved items', () => {
-    const item1 = createReviewItem(makeTx({ id: 'tx-1', confidence: 0.4 }), { now: () => FIXED_NOW });
-    const item2 = createReviewItem(makeTx({ id: 'tx-2', confidence: 0.5 }), { now: () => FIXED_NOW });
-    let store = addItemToStore(createReviewQueueStore(), item1);
-    store = addItemToStore(store, item2);
-    store = resolveItemInStore(store, item1.id, makeResolution());
+  it('returns items sorted by createdAt ascending', () => {
+    const earlier = createReviewItem(
+      makeTx({ id: 'tx-a', confidence: 0.6 }),
+      { now: () => '2024-01-10T08:00:00.000Z' },
+    );
+    const later = createReviewItem(
+      makeTx({ id: 'tx-b', confidence: 0.5 }),
+      { now: () => '2024-01-15T08:00:00.000Z' },
+    );
 
-    const resolved = listResolvedItems(store);
-    expect(resolved).toHaveLength(1);
-    expect(resolved[0]?.transactionId).toBe('tx-1');
+    // Add in reverse order to confirm sort overrides insertion order
+    let store = createReviewQueueStore();
+    store = addItemToStore(store, later);
+    store = addItemToStore(store, earlier);
+
+    const pending = listPendingItems(store);
+    expect(pending.map((i) => i.transactionId)).toEqual(['tx-a', 'tx-b']);
   });
 
-  it('returns empty arrays when the store is empty', () => {
-    const store = createReviewQueueStore();
+  it('returns an empty array when all items are resolved', () => {
+    const item = createReviewItem(makeTx({ id: 'tx-1', confidence: 0.6 }), { now: () => FIXED_NOW });
+    const resolved = resolveReviewItem(item, makeResolution());
+    const store = addItemToStore(createReviewQueueStore(), resolved);
     expect(listPendingItems(store)).toHaveLength(0);
-    expect(listResolvedItems(store)).toHaveLength(0);
   });
 });
 
-// ---------------------------------------------------------------------------
-// resolveItemInStore
-// ---------------------------------------------------------------------------
+describe('listResolvedItems', () => {
+  it('returns only resolved items', () => {
+    const item1 = createReviewItem(makeTx({ id: 'tx-1', confidence: 0.6 }), { now: () => FIXED_NOW });
+    const item2 = createReviewItem(makeTx({ id: 'tx-2', confidence: 0.5 }), { now: () => FIXED_NOW });
+    const resolved2 = resolveReviewItem(item2, makeResolution());
+
+    let store = createReviewQueueStore();
+    store = addItemToStore(store, item1);
+    store = addItemToStore(store, resolved2);
+
+    const resolved = listResolvedItems(store);
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0]?.transactionId).toBe('tx-2');
+  });
+});
 
 describe('resolveItemInStore', () => {
-  it('resolves the item in the store', () => {
+  it('resolves an item and returns an updated store', () => {
     const item = createReviewItem(makeTx({ id: 'tx-1', confidence: 0.6 }), { now: () => FIXED_NOW });
-    let store = addItemToStore(createReviewQueueStore(), item);
-    store = resolveItemInStore(store, item.id, makeResolution({ action: 'approve', userId: 'u-1' }));
+    const store = addItemToStore(createReviewQueueStore(), item);
+    const resolution = makeResolution({ action: 'approve', userId: 'user-99' });
 
-    const resolved = getItemById(store, item.id);
-    expect(resolved?.resolvedAt).toBeDefined();
-    expect(resolved?.resolution?.action).toBe('approve');
+    const updated = resolveItemInStore(store, item.id, resolution);
+    const resolvedItem = getItemById(updated, item.id);
+
+    expect(resolvedItem?.resolvedAt).toBe(resolution.resolvedAt);
+    expect(resolvedItem?.resolution?.action).toBe('approve');
   });
 
   it('does not mutate the original store', () => {
     const item = createReviewItem(makeTx({ id: 'tx-1', confidence: 0.6 }), { now: () => FIXED_NOW });
-    const original = addItemToStore(createReviewQueueStore(), item);
-    resolveItemInStore(original, item.id, makeResolution());
-    expect(getItemById(original, item.id)?.resolvedAt).toBeUndefined();
+    const store = addItemToStore(createReviewQueueStore(), item);
+    resolveItemInStore(store, item.id, makeResolution());
+    expect(store.items[item.id]?.resolvedAt).toBeUndefined();
   });
 
   it('throws when the item ID does not exist', () => {
     const store = createReviewQueueStore();
-    expect(() => resolveItemInStore(store, 'ghost', makeResolution())).toThrow(/not found/);
+    expect(() => resolveItemInStore(store, 'rq-missing', makeResolution())).toThrow(/not found/);
   });
 
   it('throws when the item is already resolved', () => {
     const item = createReviewItem(makeTx({ id: 'tx-1', confidence: 0.6 }), { now: () => FIXED_NOW });
-    let store = addItemToStore(createReviewQueueStore(), item);
-    store = resolveItemInStore(store, item.id, makeResolution());
+    const resolved = resolveReviewItem(item, makeResolution());
+    const store = addItemToStore(createReviewQueueStore(), resolved);
     expect(() => resolveItemInStore(store, item.id, makeResolution())).toThrow(/already resolved/);
   });
 });
